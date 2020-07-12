@@ -59,3 +59,24 @@ def loadmat(filename):
         return elem_list
     data = spio.loadmat(filename, struct_as_record=False, squeeze_me=True)
     return _check_keys(data)
+
+def calc_CC_norm(y_td, y_hat):
+    '''
+    Calculate CC_norm, CC_abs_CC_max of a y_td matrix where t is time and d are repeats
+    '''
+    n_t, n = y_td.shape
+    y = np.mean(y_td, axis=1)
+    Ey = np.mean(y)
+    Eyhat = np.mean(y_hat)
+    Vy = np.sum(np.multiply((y-Ey), (y-Ey)))/n_t
+    Vyhat = np.sum(np.multiply((y_hat-Eyhat), (y_hat-Eyhat)))/n_t
+    Cyyhat = np.sum(np.multiply((y-Ey), (y_hat-Eyhat)))/n_t
+    SP = (np.var(np.sum(y_td, axis=1), ddof=1)-np.sum(np.var(y_td, axis=0, ddof=1)))/(n*(n-1))
+    CCabs = Cyyhat/np.sqrt(Vy*Vyhat)
+    CCnorm = Cyyhat/np.sqrt(SP*Vyhat)
+    CCmax = np.sqrt(SP/Vy)
+    if SP <= 0:
+        print('SP less than or equal to zero - CCmax and CCnorm cannot be calculated.')
+        CCnorm = np.nan
+        CCmax = 0
+    return CCnorm, CCabs, CCmax

@@ -10,6 +10,7 @@ from scipy.optimize import minimize, check_grad
 from sklearn.base import RegressorMixin
 from benlib.strf import SeparableKernel, ElNet, tensorize_segments, concatenate_segments
 from benlib.plot import bindata
+from benlib.utils import calc_CC_norm
 
 class ElNet_Sigmoid(RegressorMixin):
     '''
@@ -28,7 +29,7 @@ class ElNet_Sigmoid(RegressorMixin):
         and fit
         '''
         X = tensorize_segments(X, self.n_h)
-        y = concatenate_segments(y)
+        y = concatenate_segments(y, mean=True)
         self.elnet.fit(X, y)
         pred = self.elnet.predict(X)
         self.sigmoid.fit(pred, y)
@@ -40,6 +41,16 @@ class ElNet_Sigmoid(RegressorMixin):
         '''
         X = tensorize_segments(X, self.n_h)
         return self.sigmoid.predict(self.elnet.predict(X))
+
+    def score(self, X=None, y=None, sample_weight=None):
+        y = concatenate_segments(y)
+        y_hat = self.predict(X)
+
+        if len(y.shape) == 1:
+            return np.corrcoef(y, y_hat)
+
+        return calc_CC_norm(y, y_hat)
+
 
 class SepKernel_Sigmoid(RegressorMixin):
     '''
@@ -56,7 +67,7 @@ class SepKernel_Sigmoid(RegressorMixin):
         and fit
         '''
         X = tensorize_segments(X, self.n_h)
-        y = concatenate_segments(y)
+        y = concatenate_segments(y, mean=True)
         self.sepkernel.fit(X, y)
         pred = self.sepkernel.predict(X)
         self.sigmoid.fit(pred, y)
@@ -68,6 +79,15 @@ class SepKernel_Sigmoid(RegressorMixin):
         '''
         X = tensorize_segments(X, self.n_h)
         return self.sigmoid.predict(self.sepkernel.predict(X))
+
+    def score(self, X=None, y=None, sample_weight=None):
+        y = concatenate_segments(y)
+        y_hat = self.predict(X)
+
+        if len(y.shape) == 1:
+            return np.corrcoef(y, y_hat)
+
+        return calc_CC_norm(y, y_hat)
 
 class Sigmoid(RegressorMixin):
     '''
@@ -85,7 +105,7 @@ class Sigmoid(RegressorMixin):
         and fit. No tensoriztion needed because X is 1D here.
         '''
         X = concatenate_segments(X)
-        y = concatenate_segments(y)
+        y = concatenate_segments(y, mean=True)
 
         # get a starting guess by roughly estimating
         # sigmoid parameters from data
@@ -105,6 +125,15 @@ class Sigmoid(RegressorMixin):
         '''
         X = concatenate_segments(X)
         return sigmoid(self.fit_params, X)
+
+    def score(self, X=None, y=None, sample_weight=None):
+        y = concatenate_segments(y)
+        y_hat = self.predict(X)
+
+        if len(y.shape) == 1:
+            return np.corrcoef(y, y_hat)
+
+        return calc_CC_norm(y, y_hat)
 
     def show(self, show_starting_guess=False):
         '''

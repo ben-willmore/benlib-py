@@ -10,6 +10,7 @@ from matplotlib import pyplot as plt
 from sklearn.base import RegressorMixin
 from sklearn.linear_model import ElasticNetCV
 from scipy.linalg import lstsq
+from benlib.utils import calc_CC_norm
 
 def show_strf(k_fh):
     '''
@@ -17,6 +18,85 @@ def show_strf(k_fh):
     '''
     mx = max([np.max(k_fh), np.abs(np.min(k_fh))])
     plt.imshow(k_fh, cmap='bwr', vmin=-mx, vmax=mx)
+
+def select_idxes(X_tfs, idxes):
+    '''
+    Choose indices from list of X_tfs (much like X_tf[idxes, :] but for a list of
+    X_tfs. Suprisingly annoying / difficult to write
+    '''
+    if len(X_tfs[0].shape) == 1:
+        one_d = True
+        X_tfs = [x.reshape((x.shape[0], 1)) for x in X_tfs]
+    else:
+        one_d = False
+
+    selected_idxes = list(set(idxes))
+    selected_idxes.sort()
+
+    segment_lengths = [0] + [len(seg) for seg in X_tfs]
+    segment_starts = np.cumsum(segment_lengths)[:-1]
+
+    X_tfs_selected = []
+
+    for seg_idx, segment in enumerate(X_tfs):
+        start = None
+        for rel_idx in range(segment.shape[0]):
+            overall_idx = segment_starts[seg_idx] + rel_idx
+            if overall_idx in selected_idxes:
+                if start is None:
+                    start = rel_idx
+            else:
+                if start is not None:
+                    X_tfs_selected.append(segment[start:rel_idx, :])
+                    start = None
+        if start is not None:
+            X_tfs_selected.append(segment[start:, :])
+
+    if one_d:
+        X_tfs_selected = [x.ravel() for x in X_tfs_selected]
+
+    return X_tfs_selected
+
+
+def test_select_idxes():
+    '''
+    Test select_idxes
+    '''
+    X_tfs = []
+    # assign segment_number + small random number to each element
+    for i in range(np.random.randint(1, 2)):
+        sz = np.random.randint(1, 100)
+        X_tfs.append(i * np.ones((sz, 10)) + np.random.random((sz, 10))/3)
+
+    # check that floor() of value is equal to segment number in all cases
+    for x in X_tfs:
+        assert np.all(np.floor(x) == np.floor(x[0, 0]))
+    vals = [int(np.floor(x[0, 0])) for x in X_tfs]
+    assert all([v == i for v, i in enumerate(vals)])
+
+    l = [x.shape[0] for x in X_tfs]
+    n_t = sum(l)
+    idxes = np.random.permutation(n_t)[:int(np.ceil(n_t/2))]
+    X_tfs_selected = select_idxes(X_tfs, idxes)
+    X_tf_selected = np.concatenate(X_tfs_selected, 0)
+
+    idxes = list(set(idxes))
+    idxes.sort()
+
+    X_tf_check = np.concatenate(X_tfs, 0)
+    X_tf_check = X_tf_check[idxes, :]
+
+    # check that the right number of indices have been selected
+    assert X_tf_selected.shape[0] == len(idxes)
+
+    # check they have the right values (including the random part)
+    assert np.array_equal(X_tf_selected, X_tf_check)
+
+    # check that every segment contains only values from a single original
+    # segment, i.e. no segments have got combined
+    for x in X_tfs_selected:
+        assert np.all(np.floor(x) == np.floor(x[0]))
+    return True
 
 def tensorize_segments(X, n_h):
     '''
@@ -31,12 +111,14 @@ def tensorize_segments(X, n_h):
         return X
     return tensorize_tfh(X, n_h)
 
-def concatenate_segments(y):
+def concatenate_segments(y, mean=False):
     '''
     If y is a list, concatenate the segments, otherwise leave it alone
     '''
     if isinstance(y, list):
-        return np.concatenate(y, 0)
+        y = np.concatenate(y, 0)
+    if mean and len(y.shape) == 2:
+        y = np.mean(y, 1)
     return y
 
 def tensorize_tfh(X_tf, n_h):
@@ -114,8 +196,11 @@ class ElNet(ElasticNetCV):
                          random_state=random_state, selection=selection)
 
     def fit(self, X=None, y=None):
+        '''
+        Fit elnet model
+        '''
         X = tensorize_segments(X, self.n_h)
-        y = concatenate_segments(y)
+        y = concatenate_segments(y, mean=True)
         n_t, n_f, n_h = X.shape
         n_t, n_f, n_h = X.shape
         super().fit(X.reshape(n_t, -1), y)
@@ -124,9 +209,24 @@ class ElNet(ElasticNetCV):
                       }
 
     def predict(self, X=None):
+        '''
+        Preictions of elnet model
+        '''
         X = tensorize_segments(X, self.n_h)
         n_t = X.shape[0]
         return super().predict(X.reshape(n_t, -1))
+
+    def score(self, X=None, y=None, sample_weight=None):
+        '''
+        Sore of elnet model
+        '''
+        y = concatenate_segments(y)
+        y_hat = self.predict(X)
+
+        if len(y.shape) == 1:
+            return np.corrcoef(y, y_hat)
+
+        return calc_CC_norm(y, y_hat)
 
     def show(self):
         '''
@@ -146,13 +246,31 @@ class SeparableKernel(RegressorMixin):
         self.n_h = n_h
 
     def fit(self, X=None, y=None):
+        '''
+        Fit separable kernel model
+        '''
         X = tensorize_segments(X, self.n_h)
-        y = concatenate_segments(y)
-        self.kernel = self.sepkernel_tfh(X, y, n_iter=self.n_iter)
+        y = concatenate_segments(y, mean=True)
+        self.kernel = sepkernel_tfh(X, y, n_iter=self.n_iter)
 
     def predict(self, X=None):
+        '''
+        Predictions of separable kernel model
+        '''
         X = tensorize_segments(X, self.n_h)
-        return self.sepconv_tfh(X, self.kernel)
+        return sepconv_tfh(X, self.kernel)
+
+    def score(self, X=None, y=None, sample_weight=None):
+        '''
+        Sore of separable kernel model
+        '''
+        y = concatenate_segments(y)
+        y_hat = self.predict(X)
+
+        if len(y.shape) == 1:
+            return np.corrcoef(y, y_hat)
+
+        return calc_CC_norm(y, y_hat)
 
     def show(self):
         '''
@@ -160,54 +278,56 @@ class SeparableKernel(RegressorMixin):
         '''
         show_strf(self.kernel['k_fh'])
 
-    def sepconv_tfh(self, X_tfh, kernel):
-        a_th = np.tensordot(X_tfh, kernel['k_f'], axes=(1, 0))
-        y_t = kernel['c'] + np.tensordot(a_th, kernel['k_h'], axes=(1, 0))
-        return y_t
+def sepconv_tfh(X_tfh, kernel):
+    '''
+    Response of separable kernel
+    '''
+    a_th = np.tensordot(X_tfh, kernel['k_f'], axes=(1, 0))
+    y_t = kernel['c'] + np.tensordot(a_th, kernel['k_h'], axes=(1, 0))
+    return y_t
 
-    def sepkernel_tfh(self, X_tfh, y_t, n_iter=15):
-        '''
-        Estimate separable kernel
-        '''
-        n_t, n_f, n_h = X_tfh.shape
+def sepkernel_tfh(X_tfh, y_t, n_iter=15):
+    '''
+    Estimate separable kernel
+    '''
+    _, n_f, n_h = X_tfh.shape
 
-        # subtract off means
-        X_mn = np.mean(X_tfh, axis=0)
-        X_tfh = X_tfh - X_mn
+    # subtract off means
+    X_mn = np.mean(X_tfh, axis=0)
+    X_tfh = X_tfh - X_mn
 
-        y_mn = np.mean(y_t)
-        y_t = y_t - y_mn
+    y_mn = np.mean(y_t)
+    y_t = y_t - y_mn
 
-        # estimate k_f and k_h
-        k_f = np.ones(n_f)
-        k_h = np.ones(n_h)
+    # estimate k_f and k_h
+    k_f = np.ones(n_f)
+    k_h = np.ones(n_h)
 
-        for _ in range(n_iter):
-            yh = np.tensordot(X_tfh, k_f, axes=(1, 0))
-            # yh = np.sum(np.multiply(X_tfh, k_f[None,:,None]), 1)
-            k_h = lstsq(yh, y_t)[0]
+    for _ in range(n_iter):
+        yh = np.tensordot(X_tfh, k_f, axes=(1, 0))
+        # yh = np.sum(np.multiply(X_tfh, k_f[None,:,None]), 1)
+        k_h = lstsq(yh, y_t)[0]
 
-            yf = np.tensordot(X_tfh, k_h, axes=(2, 0))
-            # yf = np.sum(np.multiply(X_tfh, k_h[None,None,:]), 2)
-            k_f = lstsq(yf, y_t)[0]
+        yf = np.tensordot(X_tfh, k_h, axes=(2, 0))
+        # yf = np.sum(np.multiply(X_tfh, k_h[None,None,:]), 2)
+        k_f = lstsq(yf, y_t)[0]
 
-        # we need to convert the kernel back into un-normalised space
-        # this is adapted from blasso.m -- where both mean and SD of coefficients are adjusted
-        # before fitting. Here, only the mean is altered.
+    # we need to convert the kernel back into un-normalised space
+    # this is adapted from blasso.m -- where both mean and SD of coefficients are adjusted
+    # before fitting. Here, only the mean is altered.
 
-        # we have fit the equation of a line where y' = m'_i x'_i + k' (actually k' = 0)
-        # and y' = y-mu_y and x'_i = x_i - mu_xi
-        # by substitution and simplification, we can get y = m_i x_i + k
-        # where,
-        # kernel coefficients m_i = m'_i (unchanged)
-        # offset k = mu_y + Sum(m'_i * mu_xi)
+    # we have fit the equation of a line where y' = m'_i x'_i + k' (actually k' = 0)
+    # and y' = y-mu_y and x'_i = x_i - mu_xi
+    # by substitution and simplification, we can get y = m_i x_i + k
+    # where,
+    # kernel coefficients m_i = m'_i (unchanged)
+    # offset k = mu_y + Sum(m'_i * mu_xi)
 
-        k_fh = np.outer(k_f, k_h)
-        kernel = {'c': y_mn - np.sum(np.multiply(k_fh, X_mn)),
-                  'k_fh': k_fh,
-                  'k_f': k_f,
-                  'k_h': k_h
-                 }
+    k_fh = np.outer(k_f, k_h)
+    kernel = {'c': y_mn - np.sum(np.multiply(k_fh, X_mn)),
+              'k_fh': k_fh,
+              'k_f': k_f,
+              'k_h': k_h
+             }
 
-        return kernel
-
+    return kernel

@@ -199,3 +199,24 @@ class ElNet_TFH_Sigmoid(RegressorMixin):
     def predict(self, X=None):
         return self.sigmoid.predict(self.elnet.predict(X))
 
+def calc_CC_norm_old(R, yhat):
+    '''
+    Calculate CC_norm, CC_abs_CC_max of a y_td matrix where t is time and d are repeats
+    '''
+    N, T = R.shape[0], R.shape[1]
+    y = np.mean(R, axis=0)
+    Ey = np.mean(y)
+    Eyhat = np.mean(yhat)
+    Vy = np.sum(np.multiply((y-Ey), (y-Ey)))/T
+    Vyhat = np.sum(np.multiply((yhat-Eyhat), (yhat-Eyhat)))/T
+    Cyyhat = np.sum(np.multiply((y-Ey), (yhat-Eyhat)))/T
+    SP = (np.var(np.sum(R, axis=0), ddof=1)-np.sum(np.var(R, axis=1, ddof=1)))/(N*(N-1))
+    print(SP)
+    CCabs = Cyyhat/np.sqrt(Vy*Vyhat)
+    CCnorm = Cyyhat/np.sqrt(SP*Vyhat)
+    CCmax = np.sqrt(SP/Vy)
+    if SP <= 0:
+        print('SP less than or equal to zero - CCmax and CCnorm cannot be calculated.')
+        CCnorm = np.nan
+        CCmax = 0
+    return CCnorm, CCabs, CCmax
