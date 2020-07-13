@@ -97,7 +97,15 @@ class SepKernel_Sigmoid(RegressorMixin):
 
 class Sigmoid(RegressorMixin):
     '''
-    Scikit-learn compatible sigmoid
+    Scikit-learn compatible sigmoid model.
+    Inputs:
+        X: X_tf -- usually a spectrogram
+        y: y_t or y_td -- neuronal response over time or time x trial
+    If your data are discontinuous, provide X (etc) as a list of
+    continuous segments [X_tf0, X_tf1, ...]
+    Parameters:
+        The model has parameters [a, b, c, d]
+        See lnmodel.sigmoid() for the interpretation.
     '''
     def __init__(self):
         self.fit_params = None

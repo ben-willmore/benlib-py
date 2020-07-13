@@ -34,6 +34,8 @@ def select_idxes(X_tfs, idxes):
     selected_idxes.sort()
 
     segment_lengths = [0] + [len(seg) for seg in X_tfs]
+    if np.max(idxes) >= np.sum(segment_lengths):
+        raise ValueError('Largest idx >= total data length')
     segment_starts = np.cumsum(segment_lengths)[:-1]
 
     X_tfs_selected = []
@@ -57,16 +59,19 @@ def select_idxes(X_tfs, idxes):
 
     return X_tfs_selected
 
-
-def test_select_idxes():
+def test_select_idxes(X_tfs=None, idxes=None):
     '''
     Test select_idxes
     '''
+    if X_tfs is None:
+        sz = [(np.random.randint(1, 100), 10) for x in range(np.random.randint(1, 5))]
+    else:
+        sz = [np.shape(x) for x in X_tfs]
+
     X_tfs = []
     # assign segment_number + small random number to each element
-    for i in range(np.random.randint(1, 2)):
-        sz = np.random.randint(1, 100)
-        X_tfs.append(i * np.ones((sz, 10)) + np.random.random((sz, 10))/3)
+    for i, sh in enumerate(sz):
+        X_tfs.append(i * np.ones(sh) + np.random.random(sh)/3)
 
     # check that floor() of value is equal to segment number in all cases
     for x in X_tfs:
@@ -74,9 +79,11 @@ def test_select_idxes():
     vals = [int(np.floor(x[0, 0])) for x in X_tfs]
     assert all([v == i for v, i in enumerate(vals)])
 
-    l = [x.shape[0] for x in X_tfs]
-    n_t = sum(l)
-    idxes = np.random.permutation(n_t)[:int(np.ceil(n_t/2))]
+    if idxes is None:
+        l = [x.shape[0] for x in X_tfs]
+        n_t = sum(l)
+        idxes = np.random.permutation(n_t)[:int(np.ceil(n_t/2))]
+
     X_tfs_selected = select_idxes(X_tfs, idxes)
     X_tf_selected = np.concatenate(X_tfs_selected, 0)
 
@@ -97,6 +104,13 @@ def test_select_idxes():
     for x in X_tfs_selected:
         assert np.all(np.floor(x) == np.floor(x[0]))
     return True
+
+def combine_segments(X1, X2):
+    '''
+    Combine two lists of 1d vectors (e.g. containing x_t and z_t) into
+    one list
+    '''
+    return [np.stack((x1, x2), axis=1) for x1, x2 in zip(X1, X2)]
 
 def tensorize_segments(X, n_h):
     '''
@@ -143,7 +157,7 @@ def split_tx(X_tf, segment_lengths):
 
 def reconstruct_gaps_tx(X_tx, segment_lengths, n_h):
     '''
-    Reintroduce n_h gaps into an X_tx matrix, to produce a continuous time
+    Reintroduce n_h-1 gaps into an X_tx matrix, to produce a continuous time
     series that doensn't have the wrong history at the beginning of
     each segment
     '''

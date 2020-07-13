@@ -15,7 +15,16 @@ from benlib.lnmodel import sigmoid, estimate_sigmoid
 
 class GainModel(RegressorMixin):
     '''
-    Scikit-learn compatible gain model -- untested
+    Scikit-learn compatible gain model.
+    Inputs:
+        X[0]: x_t -- usually the output of an STRF model
+        X[1]: c_t -- binary valued contrast over time, 0 = low; 1 = high
+        y: y_t or y_td -- neuronal response over time or time x trial
+    If your data are discontinuous, provide X[0] (etc) as a list of
+    continuous segments [X_t0, X_t1, ...]
+    Parameters:
+        The model has parameters [a, b, c_lo, c_hi, d_lo, d_hi]
+        See lnmodel.sigmoid() for the interpretation.
     '''
     def __init__(self):
         self.fit_params = None
@@ -26,37 +35,37 @@ class GainModel(RegressorMixin):
     def fit(self, X=None, y=None):
         '''
         Reshape data (if needed)
-        and fit. No tensorization needed because X is 1D here.
+        and fit. No tensorization needed because X does not contain history
         '''
-        print('Untested!!')
-        X = concatenate_segments(X)
-        x_t = X[:, :, :]
-        c_t = X[:, :, :]
+        x_t = concatenate_segments(X[0])
+        c_t = concatenate_segments(X[1])
         y_t = concatenate_segments(y, mean=True)
 
         # get a starting guess by roughly estimating
         # sigmoid parameters from data
-        bin_x, bin_y = bindata(x_t[np.where(c_t == 0)], y, n_bins=50)
+        w = np.where(c_t == 0)
+        bin_x, bin_y = bindata(x_t[w], y_t[w], n_bins=50)
         guess_lo = estimate_sigmoid(bin_x, bin_y)
-        bin_x, bin_y = bindata(x_t[np.where(c_t == 1)], y, n_bins=50)
+
+        w = np.where(c_t == 1)
+        bin_x, bin_y = bindata(x_t[w], y_t[w], n_bins=50)
         guess_hi = estimate_sigmoid(bin_x, bin_y)
-        self.guess = [(guess_lo[0]+guess_hi[0])/2, (guess_lo[1]+guess_hi[1])/2,
-                      guess_lo[2], guess_hi[2], guess_lo[3], guess_hi[3]]
+        self.guess = np.array([(guess_lo[0]+guess_hi[0])/2, (guess_lo[1]+guess_hi[1])/2,
+                               guess_lo[2], guess_hi[2], guess_lo[3], guess_hi[3]])
 
         self.fit_result = minimize(gainmodel_sse, self.guess, args=(x_t, c_t, y_t),
                                    jac=gainmodel_sse_grad, method='cg')
         # print(self.fit_result)
         self.fit_params = self.fit_result.x
-        self.fit_data = (X, y)
+        self.fit_data = (x_t, c_t, y_t)
 
     def predict(self, X=None):
         '''
         Reshape data (if needed)
         and predict
         '''
-        X = concatenate_segments(X)
-        x_t = X[:, :, :]
-        c_t = X[:, :, :]
+        x_t = concatenate_segments(X[0])
+        c_t = concatenate_segments(X[1])
         return gainmodel(self.fit_params, x_t, c_t)
 
     def score(self, X=None, y=None, sample_weight=None):
@@ -73,15 +82,27 @@ class GainModel(RegressorMixin):
 
     def show(self, show_starting_guess=False):
         '''
-        Plot sigmoid relationship
+        Plot sigmoid relationships
         '''
-        x, y = self.fit_data
-        bin_x, bin_y = bindata(x, y, n_bins=100)
+        x_t, c_t, y_t = self.fit_data
+        w = np.where(c_t == 0)
+        bin_x, bin_y = bindata(x_t[w], y_t[w], n_bins=50)
+        params_lo = self.fit_params[np.r_[:3, 4]]
+        x_lo = np.linspace(x_t[w].min(), x_t[w].max(), 40)
         plt.scatter(bin_x, bin_y)
-        x = np.linspace(x.min(), x.max(), 40)
+
+        w = np.where(c_t == 1)
+        bin_x, bin_y = bindata(x_t[w], y_t[w], n_bins=50)
+        params_hi = self.fit_params[np.r_[:2, 3, 5]]
+        x_hi = np.linspace(x_t[w].min(), x_t[w].max(), 40)
+        plt.scatter(bin_x, bin_y)
+
         if show_starting_guess:
-            plt.plot(x, sigmoid(self.guess, x), 'r')
-        plt.plot(x, self.predict(x), 'g')
+            plt.plot(x_lo, sigmoid(self.guess[np.r_[:3, 4]], x_lo), 'c')
+            plt.plot(x_hi, sigmoid(self.guess[np.r_[:2, 3, 5]], x_hi), 'm')
+
+        plt.plot(x_lo, sigmoid(params_lo, x_lo), 'b')
+        plt.plot(x_hi, sigmoid(params_hi, x_hi), 'r')
 
 def gainmodel(params, x_t, c_t):
     '''Gain model with params a, b, c_lo, c_hi, d_lo, d_hi
@@ -156,7 +177,16 @@ def check_gainmodel_grad():
 
 class GainModel3Free(RegressorMixin):
     '''
-    Scikit-learn compatible gain model -- untested
+    Scikit-learn compatible gain model.
+    Inputs:
+        X[0]: x_t -- usually the output of an STRF model
+        X[1]: c_t -- binary valued contrast over time, 0 = low; 1 = high
+        y: y_t or y_td -- neuronal response over time or time x trial
+    If your data are discontinuous, provide X[0] (etc) as a list of
+    continuous segments [X_t0, X_t1, ...]
+    Parameters:
+        The model has parameters [a_lo, a_hi, b, c_lo, c_hi, d_lo, d_hi]
+        See lnmodel.sigmoid() for the interpretation.
     '''
     def __init__(self):
         self.fit_params = None
@@ -167,37 +197,38 @@ class GainModel3Free(RegressorMixin):
     def fit(self, X=None, y=None):
         '''
         Reshape data (if needed)
-        and fit. No tensorization needed because X is 1D here.
+        and fit. No tensorization needed because X doesn't contain history
         '''
-        print('Untested!!')
-        X = concatenate_segments(X)
-        x_t = X[:, :, :]
-        c_t = X[:, :, :]
+        x_t = concatenate_segments(X[0])
+        c_t = concatenate_segments(X[1])
         y_t = concatenate_segments(y, mean=True)
 
         # get a starting guess by roughly estimating
         # sigmoid parameters from data
-        bin_x, bin_y = bindata(x_t[np.where(c_t == 0)], y, n_bins=50)
+        w = np.where(c_t == 0)
+        bin_x, bin_y = bindata(x_t[w], y_t[w], n_bins=50)
         guess_lo = estimate_sigmoid(bin_x, bin_y)
-        bin_x, bin_y = bindata(x_t[np.where(c_t == 1)], y, n_bins=50)
+
+        w = np.where(c_t == 1)
+        bin_x, bin_y = bindata(x_t[w], y_t[w], n_bins=50)
         guess_hi = estimate_sigmoid(bin_x, bin_y)
-        self.guess = [guess_lo[0], guess_hi[0], (guess_lo[1]+guess_hi[1])/2,
-                      guess_lo[2], guess_hi[2], guess_lo[3], guess_hi[3]]
+
+        self.guess = np.array([guess_lo[0], guess_hi[0], (guess_lo[1]+guess_hi[1])/2,
+                               guess_lo[2], guess_hi[2], guess_lo[3], guess_hi[3]])
 
         self.fit_result = minimize(gainmodel_3free_sse, self.guess, args=(x_t, c_t, y_t),
                                    jac=gainmodel_3free_sse_grad, method='cg')
-        # print(self.fit_result)
+
         self.fit_params = self.fit_result.x
-        self.fit_data = (X, y)
+        self.fit_data = (x_t, c_t, y_t)
 
     def predict(self, X=None):
         '''
         Reshape data (if needed)
         and predict
         '''
-        X = concatenate_segments(X)
-        x_t = X[:, :, :]
-        c_t = X[:, :, :]
+        x_t = concatenate_segments(X[0])
+        c_t = concatenate_segments(X[1])
         return gainmodel_3free(self.fit_params, x_t, c_t)
 
     def score(self, X=None, y=None, sample_weight=None):
@@ -214,15 +245,27 @@ class GainModel3Free(RegressorMixin):
 
     def show(self, show_starting_guess=False):
         '''
-        Plot sigmoid relationship
+        Plot sigmoid relationships
         '''
-        x, y = self.fit_data
-        bin_x, bin_y = bindata(x, y, n_bins=100)
+        x_t, c_t, y_t = self.fit_data
+        w = np.where(c_t == 0)
+        bin_x, bin_y = bindata(x_t[w], y_t[w], n_bins=50)
+        params_lo = self.fit_params[np.r_[0, 2:4, 5]]
+        x_lo = np.linspace(x_t[w].min(), x_t[w].max(), 40)
         plt.scatter(bin_x, bin_y)
-        x = np.linspace(x.min(), x.max(), 40)
+
+        w = np.where(c_t == 1)
+        bin_x, bin_y = bindata(x_t[w], y_t[w], n_bins=50)
+        params_hi = self.fit_params[np.r_[1:3, 4, 6]]
+        x_hi = np.linspace(x_t[w].min(), x_t[w].max(), 40)
+        plt.scatter(bin_x, bin_y)
+
         if show_starting_guess:
-            plt.plot(x, sigmoid(self.guess, x), 'r')
-        plt.plot(x, self.predict(x), 'g')
+            plt.plot(x_lo, sigmoid(self.guess[np.r_[0, 2:4, 5]], x_lo), 'c')
+            plt.plot(x_hi, sigmoid(self.guess[np.r_[1:3, 4, 6]], x_hi), 'm')
+
+        plt.plot(x_lo, sigmoid(params_lo, x_lo), 'b')
+        plt.plot(x_hi, sigmoid(params_hi, x_hi), 'r')
 
 def gainmodel_3free(params, x_t, c_t):
     '''Gain model with params a_lo, a_hi, b, c_lo, c_hi, d_lo, d_hi
