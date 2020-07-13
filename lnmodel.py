@@ -43,6 +43,9 @@ class ElNet_Sigmoid(RegressorMixin):
         return self.sigmoid.predict(self.elnet.predict(X))
 
     def score(self, X=None, y=None, sample_weight=None):
+        '''
+        Score
+        '''
         y = concatenate_segments(y)
         y_hat = self.predict(X)
 
@@ -81,6 +84,9 @@ class SepKernel_Sigmoid(RegressorMixin):
         return self.sigmoid.predict(self.sepkernel.predict(X))
 
     def score(self, X=None, y=None, sample_weight=None):
+        '''
+        Score
+        '''
         y = concatenate_segments(y)
         y_hat = self.predict(X)
 
@@ -127,6 +133,9 @@ class Sigmoid(RegressorMixin):
         return sigmoid(self.fit_params, X)
 
     def score(self, X=None, y=None, sample_weight=None):
+        '''
+        Score
+        '''
         y = concatenate_segments(y)
         y_hat = self.predict(X)
 
@@ -147,13 +156,13 @@ class Sigmoid(RegressorMixin):
             plt.plot(x, sigmoid(self.guess, x), 'r')
         plt.plot(x, self.predict(x), 'g')
 
-def sigmoid(params, x):
+def sigmoid(params, x_t):
     '''
     Robust sigmoid
     '''
     a, b, c, d = params
 
-    g = (x-c)/d
+    g = (x_t-c)/d
 
     w = np.where(g >= 0)
     z = np.exp(-g[w])
@@ -168,26 +177,27 @@ def sigmoid(params, x):
 
     return a + b * g
 
-def sigmoid_sse(params, X, y):
+def sigmoid_sse(params, x_t, y_t):
     '''
     Sigmoid SSE loss
     '''
-    fX = sigmoid(params, X)
-    residuals = fX - y
+    fx = sigmoid(params, x_t)
+    residuals = fx - y_t
     E = np.sum(residuals**2)
     return E
 
-def sigmoid_sse_grad(params, x, y):
+def sigmoid_sse_grad(params, x_t, y_t):
     '''
     Jacobian of sigmoid SSE loss
     '''
-    a, b, c, d = params
-    fx = sigmoid(params, x)
+    # a is a constant offset therefore doesn't feature in derivative
+    _, b, c, d = params
+    fx = sigmoid(params, x_t)
 
-    residuals = fx - y
+    residuals = fx - y_t
 
     # exp(-(z_t-c)/d) recurs in partials
-    r = -(x-c)/d
+    r = -(x_t-c)/d
     exp_r = np.exp(r)
 
     # etrat_sq is a stable approximation to exp(x)/(1+exp(x)^2
@@ -207,7 +217,7 @@ def sigmoid_sse_grad(params, x, y):
 
     # dfx/dd = b(-z_t+c)*exp_r / [d*(1+exp_r)]^2
     #        = b(-z_t+c)/[d^2*(1+exp_r)] * etrat
-    dE[3] = np.sum(2*residuals * b * (-x+c) * etrat_sq / (d**2))
+    dE[3] = np.sum(2*residuals * b * (-x_t+c) * etrat_sq / (d**2))
 
     return dE
 
@@ -215,9 +225,13 @@ def check_sigmoid_grad():
     '''
     Check sigmoid SSE Jacobian
     '''
-    x = np.array([5, 6, 7, 8])
-    y = np.array([1, 2, 3, 4])
-    check_grad(sigmoid_sse, sigmoid_sse_grad, np.random.random(4,)*100, x, y)
+    err = np.zeros(100)
+    for i in range(100):
+        p = np.random.random(4)*10
+        x = np.random.random(100)
+        y = np.random.random(100)
+        err[i] = check_grad(sigmoid_sse, sigmoid_sse_grad, p, x, y)
+    print('Maximum error = %0.3e' % np.max(err))
 
 def estimate_sigmoid(x, y, d_prop=0.05):
     '''
