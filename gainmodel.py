@@ -76,7 +76,7 @@ class GainModel(RegressorMixin):
         y_hat = self.predict(X)
 
         if len(y.shape) == 1:
-            return np.corrcoef(y, y_hat)
+            return np.corrcoef(y, y_hat)[0, 1]
 
         return calc_CC_norm(y, y_hat)
 
@@ -239,7 +239,7 @@ class GainModel3Free(RegressorMixin):
         y_hat = self.predict(X)
 
         if len(y.shape) == 1:
-            return np.corrcoef(y, y_hat)
+            return np.corrcoef(y, y_hat)[0, 1]
 
         return calc_CC_norm(y, y_hat)
 
