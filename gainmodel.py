@@ -11,11 +11,12 @@ from sklearn.base import RegressorMixin
 from benlib.strf import concatenate_segments
 from benlib.plot import bindata
 from benlib.utils import calc_CC_norm
-from benlib.lnmodel import sigmoid, estimate_sigmoid
+from benlib.lnmodel import sigmoid, estimate_sigmoid, Sigmoid
 
 class GainModel(RegressorMixin):
     '''
-    Scikit-learn compatible gain model.
+    Scikit-learn compatible gain model, where c, d can change with contrast
+    but a, b are fixed
     Inputs:
         X[0]: x_t -- usually the output of an STRF model
         X[1]: c_t -- binary valued contrast over time, 0 = low; 1 = high
@@ -177,7 +178,8 @@ def check_gainmodel_grad():
 
 class GainModel3Free(RegressorMixin):
     '''
-    Scikit-learn compatible gain model.
+    Scikit-learn compatible gain model, where a, c, d can change with contrast
+    but b is fixed
     Inputs:
         X[0]: x_t -- usually the output of an STRF model
         X[1]: c_t -- binary valued contrast over time, 0 = low; 1 = high
@@ -338,3 +340,98 @@ def check_gainmodel_3free_grad():
         y = np.random.random(100)
         err[i] = check_grad(gainmodel_3free_sse, gainmodel_3free_sse_grad, p, x, c, y)
     print('Maximum error = %0.3e' % np.max(err))
+
+class GainModel4Free(RegressorMixin):
+    '''
+    Scikit-learn compatible gain model -- two independent sigmoids
+    Inputs:
+        X[0]: x_t -- usually the output of an STRF model
+        X[1]: c_t -- binary valued contrast over time, 0 = low; 1 = high
+        y: y_t or y_td -- neuronal response over time or time x trial
+    If your data are discontinuous, provide X[0] (etc) as a list of
+    continuous segments [X_t0, X_t1, ...]
+    Parameters:
+        The model has parameters [a_lo, a_hi, b_lo, b_hi, c_lo, c_hi, d_lo, d_hi]
+        See lnmodel.sigmoid() for the interpretation.
+    '''
+    def __init__(self):
+        self.fit_params = None
+        self.fit_result = None
+        self.fit_data = None
+        self.guess = None
+
+    def fit(self, X=None, y=None):
+        '''
+        Reshape data (if needed)
+        and fit. No tensorization needed because X doesn't contain history
+        '''
+        x_t = concatenate_segments(X[0])
+        c_t = concatenate_segments(X[1])
+        y_t = concatenate_segments(y, mean=True)
+
+        # fit sigmoid to lo contrast data
+        model_lo = Sigmoid()
+        w = np.where(c_t == 0)
+        model_lo.fit(x_t[w], y_t[w])
+
+        model_hi = Sigmoid()
+        w = np.where(c_t == 1)
+        model_hi.fit(x_t[w], y_t[w])
+
+        self.fit_result = (model_lo.fit_result, model_hi.fit_result)
+
+        self.fit_params = np.zeros(8)
+        self.fit_params[0::2] = model_lo.fit_params
+        self.fit_params[1::2] = model_hi.fit_params
+        print(self.fit_params)
+        self.fit_data = (x_t, c_t, y_t)
+
+    def predict(self, X=None):
+        '''
+        Reshape data (if needed)
+        and predict
+        '''
+        x_t = concatenate_segments(X[0])
+        c_t = concatenate_segments(X[1])
+        params_lo = self.fit_params[0::2]
+        params_hi = self.fit_params[1::2]
+
+        y_hat = np.zeros(x_t.shape)
+        w = np.where(c_t == 0)
+        y_hat[w] = sigmoid(params_lo, x_t[w])
+        w = np.where(c_t == 1)
+        y_hat[w] = sigmoid(params_hi, x_t[w])
+
+        return y_hat
+
+    def score(self, X=None, y=None, sample_weight=None):
+        '''
+        Score
+        '''
+        y = concatenate_segments(y)
+        y_hat = self.predict(X)
+
+        if len(y.shape) == 1:
+            return np.corrcoef(y, y_hat)[0, 1]
+
+        return calc_CC_norm(y, y_hat)
+
+    def show(self):
+        '''
+        Plot sigmoid relationships
+        '''
+        x_t, c_t, y_t = self.fit_data
+        w = np.where(c_t == 0)
+        bin_x, bin_y = bindata(x_t[w], y_t[w], n_bins=50)
+        params_lo = self.fit_params[0::2]
+        x_lo = np.linspace(x_t[w].min(), x_t[w].max(), 40)
+        plt.scatter(bin_x, bin_y)
+
+        w = np.where(c_t == 1)
+        bin_x, bin_y = bindata(x_t[w], y_t[w], n_bins=50)
+        params_hi = self.fit_params[1::2]
+        x_hi = np.linspace(x_t[w].min(), x_t[w].max(), 40)
+        plt.scatter(bin_x, bin_y)
+
+        plt.plot(x_lo, sigmoid(params_lo, x_lo), 'b')
+        plt.plot(x_hi, sigmoid(params_hi, x_hi), 'r')
