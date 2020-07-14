@@ -216,7 +216,7 @@ class ElNet(ElasticNetCV):
         X = tensorize_segments(X, self.n_h)
         y = concatenate_segments(y, mean=True)
         n_t, n_f, n_h = X.shape
-        n_t, n_f, n_h = X.shape
+
         super().fit(X.reshape(n_t, -1), y)
         self.kernel = {'c': self.intercept_,
                        'k_fh': self.coef_.reshape(n_f, n_h)
