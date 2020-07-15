@@ -181,12 +181,13 @@ def reconstruct_gaps_tx(X_tx, segment_lengths, n_h):
 class ElNet(ElasticNetCV):
     '''
     Scikit-learn compatible elnet kernel. Works with either a continuous X_tf,
-    or a list of X_tfs.
+    or a list of X_tfs. To make this faster, you can use 3 folds (cv=3),
+    reduce n_alphas (to say 10), and set l1_ratio to 'lasso' or 'ridge'
     '''
     def __init__(self, n_h=15, *, l1_ratio=None, eps=1e-3, n_alphas=100, alphas=None,
                  fit_intercept=True, normalize=False, precompute='auto',
                  max_iter=1000, tol=1e-4, cv=None, copy_X=True,
-                 verbose=0, n_jobs=None, positive=False, random_state=None,
+                 verbose=0, n_jobs=-1, positive=False, random_state=None,
                  selection='cyclic'):
 
         self.kernel = None
