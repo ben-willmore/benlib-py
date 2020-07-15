@@ -56,7 +56,16 @@ class TorchLinearRegression(torch.nn.Module):
             #print('epoch {}, loss {}'.format(epoch, loss.item()))
         if plot_loss:
             plt.plot(np.arange(len(saved_loss)), saved_loss)
-        self.kernel = {'k_fh': self.linear.weight.detach().cpu().numpy().reshape(n_f, n_h)}
+
+        w = self.linear.weight.detach().cpu().numpy()
+        self.info = {'type': 'TorchLinearRegression',
+                     'n_f': n_f,
+                     'n_h': n_h,
+                     'c': self.linear.bias.detach().cpu().numpy(),
+                     'k_fh': w.reshape(n_f, n_h), # for convenience,
+                     'b': self.linear.bias.detach().cpu().numpy(),
+                     'w': w
+                     }
 
     def forward(self, x):
         return self.linear(x)
@@ -88,13 +97,23 @@ class TorchLinearRegression(torch.nn.Module):
 
     def show(self):
         '''
-        Show the kernel
+        Show the "kernel"
         '''
+        show_strf(self.info['k_fh'])
 
-        show_strf(self.kernel['k_fh'])
+    def dump(self):
+        return self.info
 
-import torch
-from torch.autograd import Variable
+    def reload(self, info):
+        '''
+        Reinitialise network from result of self.dump()
+        '''
+        n_f, n_h = info['n_f'], info['n_h']
+        self.linear = torch.nn.Linear(n_f*n_h, 1, bias=True)
+        self.linear.bias = torch.nn.Parameter(torch.from_numpy(info['b']))
+        self.linear.weight = torch.nn.Parameter(torch.from_numpy(info['w']))
+        if torch.cuda.is_available():
+            self.linear = self.linear0.cuda()
 
 class TorchNRF(torch.nn.Module):
     def __init__(self, n_hidden=3, n_h=15, learning_rate=1e-4, epochs=15000, lamb=1e-5):
@@ -150,7 +169,20 @@ class TorchNRF(torch.nn.Module):
 
         if plot_loss:
             plt.plot(np.arange(len(saved_loss)), saved_loss)
-        self.kernel = {'k_fh': self.linear1.weight.detach().cpu().numpy().reshape(n_f, n_h*self.n_hidden)}
+
+        w1 = self.linear1.weight.detach().cpu().numpy()
+        self.info = {type: 'TorchNRF',
+                     'n_f': n_f,
+                     'n_h': n_h,
+                     'n_hidden': self.n_hidden,
+                     'k_fh': w1.reshape(n_f, n_h*self.n_hidden), # just for convenience
+                     'b1': self.linear1.bias.detach().cpu().numpy(),
+                     'w1': w1,
+                     'b2': self.linear2.bias.detach().cpu().numpy(),
+                     'w2': self.linear2.weight.detach().cpu().numpy(),
+                     'b3': self.linear3.bias.detach().cpu().numpy(),
+                     'w3': self.linear3.weight.detach().cpu().numpy(),
+                    }
 
     def forward(self, x):
         out = self.linear3(self.sigmoid(self.linear2(self.sigmoid(self.linear1(x)))))
@@ -182,7 +214,34 @@ class TorchNRF(torch.nn.Module):
 
     def show(self):
         '''
-        Show the kernel
+        Show the "kernel"
         '''
 
-        show_strf(self.kernel['k_fh'])
+        show_strf(self.info['k_fh'])
+
+    def dump(self):
+        '''
+        Dump most important info in pickleable format
+        '''
+        return self.info
+
+    def reload(self, info):
+        '''
+        Reinitialise network from result of self.dump()
+        '''
+        n_f, n_h = info['n_f'], info['n_h']
+        self.n_hidden = info['n_hidden']
+        self.linear1 = torch.nn.Linear(n_f*n_h, self.n_hidden, bias=True)
+        self.linear1.bias = torch.nn.Parameter(torch.from_numpy(info['b1']))
+        self.linear1.weight = torch.nn.Parameter(torch.from_numpy(info['w1']))
+        self.linear2 = torch.nn.Linear(self.n_hidden, 1, bias=True)
+        self.linear2.bias = torch.nn.Parameter(torch.from_numpy(info['b2']))
+        self.linear2.weight = torch.nn.Parameter(torch.from_numpy(info['w2']))
+        self.linear3 = torch.nn.Linear(1, 1, bias=True)
+        self.linear3.bias = torch.nn.Parameter(torch.from_numpy(info['b3']))
+        self.linear3.weight = torch.nn.Parameter(torch.from_numpy(info['w3']))
+
+        if torch.cuda.is_available():
+            self.linear1 = self.linear1.cuda()
+            self.linear2 = self.linear2.cuda()
+            self.linear3 = self.linear3.cuda()
