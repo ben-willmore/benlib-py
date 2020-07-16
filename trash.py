@@ -1,3 +1,232 @@
+def melbank3(n_filters, n_fft, f_s, f_lo=0, f_hi=0.5, typ='log'):
+    if typ == 'log':
+        freq2scale = np.log10
+        scale2freq = lambda x: np.power(10, x)
+    elif typ == 'erb':
+        freq2scale = frq2erb
+        scale2freq = erb2frq
+    elif typ == 'cat':
+        freq2scale = frq2erb_cat
+        scale2freq = erb2frq_cat
+
+    # lo and hi filter frequencies in the desired units
+    melfreq_lo, melfreq_hi = freq2scale([f_lo * f_s, f_hi * f_s])
+    # fixed increment required to get from melfreq_lo to melfreq_hi in n_filters steps
+    melinc = (melfreq_hi - melfreq_lo)/(n_filters-1)
+    # add 2 extra increments because the filters overlap by a factor of 2
+    melfreq_lo, melfreq_hi = melfreq_lo-melinc, melfreq_hi+melinc
+    # get fl_lo, fl_mid, fh_mid, fh_hi in Hz
+    frq = scale2freq(melfreq_lo + np.array([0, 1, n_filters, n_filters+1]) * melinc)
+    blim = frq * n_fft / f_s
+    print('blim', blim)
+    centre_freqs = melfreq_lo + np.arange(1, n_filters + 1) * melinc
+    print(melfreq_lo, melfreq_hi)
+    freqs = melfreq_lo + np.arange(0, n_filters+2) * melinc
+    print(np.min(freqs), np.max(freqs))
+    fft_freqs = np.arange(0, n_fft/2+1) / n_fft*f_s
+    print(fft_freqs.shape)
+
+    for idx in range(freqs.shape[0]-2):
+        f_lo = freqs[idx]
+        f_mid = freqs[idx+1]
+        f_hi = freqs[idx+2]
+        print(f_lo, f_mid, f_hi)
+
+def melbank2(n_filters, n_fft, f_s, f_lo=0, f_hi=0.5, typ='log'):
+    if typ == 'log':
+        freq2scale = np.log10
+        scale2freq = lambda x: np.power(10, x)
+    elif typ == 'erb':
+        freq2scale = frq2erb
+        scale2freq = erb2frq
+    elif typ == 'cat':
+        freq2scale = frq2erb_cat
+        scale2freq = erb2frq_cat
+
+    # lo and hi filter frequencies in the desired units
+    melfreq_lo, melfreq_hi = freq2scale([f_lo * f_s, f_hi * f_s])
+    # fixed increment required to get from melfreq_lo to melfreq_hi in n_filters steps
+    melinc = (melfreq_hi - melfreq_lo)/(n_filters-1)
+    # add 2 extra increments... why? if using centres,you'd add half. surely?
+    melfreq_lo, melfreq_hi = melfreq_lo-melinc, melfreq_hi+melinc
+    # get fl_lo, fl_mid, fh_mid, fh_hi in Hz
+    frq = scale2freq(melfreq_lo + np.array([0, 1, n_filters, n_filters+1]) * melinc)
+    blim = frq * n_fft / f_s
+    print('blim', blim)
+    centre_freqs = melfreq_lo + np.arange(1, n_filters + 1) * melinc
+
+    b1 = np.floor(blim[0]) + 1
+
+    fn2 = np.floor(n_fft/2)
+    b4 = np.min([fn2, np.ceil(blim[3])-1])
+    print('b1', b1, 'fn2', fn2, 'b4', b4)
+    print('centre_freqs', centre_freqs, centre_freqs.shape)
+
+    sca = freq2scale(np.arange(b1, b4+1) * f_s / n_fft)
+    pf = (sca - melfreq_lo) / melinc
+
+    print('pf', pf.shape, np.min(pf), np.max(pf))
+
+    if pf[0] < 0:
+        pf = pf[1:]
+        b1 = b1 + 1
+
+    if pf[-1] >= n_filters + 1:
+        pf = pf[:-1]
+        b4 = b4 - 1
+
+    fp = np.floor(pf)
+    pm = pf - fp
+    # the following are indices, so should be one less than matlab
+    k4 = fp.shape[0] - 1
+    try:
+        k2 = np.where(fp > 0)[0][0]
+    except IndexError:
+        k2 = k4 + 1
+    try:
+        k3 = np.where(fp < n_filters)[0][-1]
+        print('noerr')
+    except IndexError:
+        print('err')
+        k3 = 0
+    print('fp', fp[:10])
+    print(np.min(pm), np.max(pm), pm.shape[0])
+    print('k2',k2, 'k3',k3, 'k4',k4)
+
+    r = np.concatenate((0+fp[:k3+1], fp[k2:k4+1])) # index?
+    c = np.concatenate((np.arange(0, k3+1), np.arange(k2, k4+1))) # index
+    v = np.concatenate((pm[:k3+1], 1-pm[k2:k4+1]))
+    print('r', np.min(r), np.max(r), r.shape)
+    print('c', np.min(c), np.max(c), c.shape)
+    print('v', np.min(v), np.max(v), v.shape)
+    mn = b1 + 1
+    mx = b4 + 1
+    print('mn', mn, 'mx', mx)
+    if b1 < 0:
+        c = np.abs(c+b1-1)-b1 + 1
+
+    x = np.zeros((int(np.max(r)+1), int(np.max(c)+1)))
+    for row, col, val in zip(r, c, v):
+        # print(row,)
+        x[int(row), int(col)] = val
+    x = x / np.sum(x, axis=1)[:, np.newaxis]
+
+    return x, centre_freqs, mn, mx
+
+def melbank(n_filters, n_fft, f_s, f_lo=0, f_hi=0.5, typ='log'):
+    '''
+    p   number of filters in filterbank
+    n   length of fft
+    fs  sample rate in Hz
+    fl  low end of the lowest filter as a fraction of fs [default = 0]
+    fh  high end of highest filter as a fraction of fs [default = 0.5]
+    w   any sensible combination of the following:
+    '''
+    sfact = 1
+
+    mflh = np.array([f_lo, f_hi]) * f_s
+    print(mflh)
+
+    if typ == 'log':
+        mflh = np.log10(mflh)
+    elif typ == 'erb':
+        mflh = frq2erb(mflh)
+    elif typ == 'cat':
+        mflh = frq2erb_cat(mflh)
+    print(typ)
+    print(mflh)
+    melrng = mflh[1] - mflh[0]
+    print(melrng)
+    fn2 = np.floor(n_fft/2)
+
+    melinc = melrng/(n_filters-1)
+    print('melinc', melinc)
+    mflh = [mflh[0]-melinc, mflh[1]+melinc]
+    print('mflh', mflh)
+
+    spc = mflh[0]+np.array([0, 1, n_filters, n_filters+1]) * melinc
+    if typ == 'log':
+        frq = np.power(10, spc)
+    elif typ == 'erb':
+        frq = erb2frq(spc)
+    elif typ == 'cat':
+        frq = erb2frq_cat(spc)
+    print('spc', spc)
+    print('frq', frq)
+
+    blim = frq * n_fft / f_s
+    print('blim', blim)
+
+    mc = mflh[0] + np.arange(1, n_filters + 1) * melinc
+    b1 = np.floor(blim[0])
+    b4 = np.min([fn2, np.ceil(blim[3])])
+    print('b1', b1, 'fn2', fn2, 'b4', b4)
+    print(mc, mc.shape, b1, b4)
+
+    frq = np.arange(b1, b4+1) * f_s / n_fft
+    if typ == 'log':
+        y = np.log10(frq)
+    elif typ == 'erb':
+        y = frq2erb(frq)
+    elif typ == 'cat':
+        y = frq2erb_cat(frq)
+
+    pf = (y - mflh[0]) / melinc
+
+    print(pf.shape, np.min(pf), np.max(pf))
+
+    if pf[0] < 0:
+        pf = pf[1:]
+        b1 = b1 + 1
+
+    if pf[-1] >= n_filters + 1:
+        pf = pf[:-1]
+        b4 = b4 - 1
+
+    fp = np.floor(pf)
+    print('fp', fp)
+    pm = pf - fp
+    print('pm', pm)
+    # the following are indices, so should be one less than matlab
+    k4 = fp.shape[0] - 1
+    try:
+        k2 = np.where(fp > 0)[0][0]
+    except IndexError:
+        k2 = k4 + 1
+    try:
+        k3 = np.where(fp < n_filters)[0][-1]
+        print('noerr')
+    except IndexError:
+        print('err')
+        k3 = 0
+    print(fp[:10])
+    print(np.min(pm), np.max(pm), pm.shape[0])
+    print('k2',k2, 'k3', k3, 'k4',k4)
+
+    r = np.concatenate((fp[:k3+1], fp[k2:k4+1])) # index?
+    c = np.concatenate((np.arange(0, k3+1), np.arange(k2, k4+1))) # index
+    v = np.concatenate((pm[:k3+1], 1-pm[k2:k4+1]))
+    print('r', np.min(r), np.max(r), r.shape)
+    print(r[:10])
+    print('c', np.min(c), np.max(c), c.shape)
+    print(c[:10])
+    print('v', np.min(v), np.max(v), v.shape)
+    print(v[:10])
+    print(v[-10:])
+    mn = b1 + 1
+    mx = b4 + 1
+    print('mn', mn, 'mx', mx)
+    if b1 < 0:
+        c = np.abs(c+b1-1)-b1 + 1
+
+    x = np.zeros((int(np.max(r)+1), int(np.max(c)+1)))
+    for row, col, val in zip(r, c, v):
+        # print(row,)
+        x[int(row), int(col)] = val
+    x = x / np.sum(x, axis=1)[:, np.newaxis]
+
+    return x, mc, mn, mx
+
 def elnet_tfh(X_tfh, y_t, l1_ratio=None, n_folds=3):
     '''
     Run elastic net using scikit-learn ElasticNetCV.
