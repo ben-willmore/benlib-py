@@ -49,13 +49,17 @@ def puretone(fs, n_samples, freq, level_dB=94, phase=0):
     t = np.arange(n_samples) * 1/fs
     return np.sin(2*np.pi*freq*t + phase) * np.sqrt(2) * dBSPL2rms(level_dB)
 
-def freq_sweep(fs, n_samples, f_min, f_max, level_dB=94, phase=0):
+def freq_sweep(fs, n_samples, f_min, f_max, method='log', level_dB=94, phase=0):
     '''
     Generate a frequency sweep
     '''
-    t = np.arange(n_samples) * 1/fs
-    freq = np.linspace(f_min, f_max, n_samples)
-    return np.sin(2*np.pi*freq*t + phase) * np.sqrt(2) * dBSPL2rms(level_dB)
+    t = np.arange(n_samples)/fs
+    if method.startswith('li'):
+        c = (f_max-f_min)/(n_samples/fs)
+        return np.sin(2*np.pi*(f_min*t + c/2*(t**2)) + phase) * np.sqrt(2) * dBSPL2rms(level_dB)
+    else:
+        k = (f_max/f_min)**(fs/n_samples)
+        return np.sin(2*np.pi*f_min*(k**t-1)/np.log(k) + phase)
 
 def cosramp_on(n_samples, ramp_samples=None):
     '''
@@ -80,6 +84,12 @@ def cosramp_onoff(n_samples, ramp_samples):
     '''
     r = cosramp_on(n_samples, ramp_samples)
     return r * r[::-1]
+
+def binaural_beats(f_s, n_samples, f_l=520, f_r=530):
+    '''
+    Binaural beat stimulus
+    '''
+    return np.stack((puretone(f_s, n_samples, f_l), puretone(f_s, n_samples, f_r)), axis=1)
 
 def spectrogram(*args, **kwargs):
     '''
