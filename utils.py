@@ -4,6 +4,7 @@ General utility functions
 
 # pylint: disable=C0103, R0912, R0914
 
+from datetime import datetime
 import numpy as np
 import scipy.io as spio
 
@@ -80,3 +81,35 @@ def calc_CC_norm(y_td, y_hat):
         CCnorm = np.nan
         CCmax = 0
     return CCnorm, CCabs, CCmax
+
+class Progress():
+    '''
+    Progress bar. By default, prints output to screen and file './progress.log'
+    '''
+
+    def __init__(self, n, name='Progress', file='./progress.log'):
+        self.file = file
+        s = '== %s (n=%d)\n%s : start' % \
+            (name, n, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        if self.file:
+            with open(self.file, 'w') as f:
+                f.write(s+'\n')
+        print(s)
+
+        self.n = n
+        self.i = 0
+
+    def print(self, i=None):
+        '''
+        Print progress. If i is provided, use it, otherwise increment
+        internal counter
+        '''
+        if i is None:
+            i = self.i
+            self.i = self.i + 1
+        s = '%s : %d of %d complete' % \
+            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), i+1, self.n)
+        if self.file:
+            with open(self.file, 'a') as f:
+                f.write(s+'\n')
+        print(s)
