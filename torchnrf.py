@@ -12,9 +12,10 @@ from benlib.utils import calc_CC_norm
 from benlib.strf import show_strf, tensorize_segments, concatenate_segments
 
 class TorchLinearRegression(torch.nn.Module):
-    def __init__(self, n_h=15, learning_rate=1e-2, epochs=2500, lamb=1e-2):
+    def __init__(self, n_h=15, n_fut=0, learning_rate=1e-2, epochs=2500, lamb=1e-2):
         super(TorchLinearRegression, self).__init__()
         self.n_h = n_h
+        self.n_fut = n_fut
         self.linear = None
         self.sigmoid = torch.nn.Sigmoid()
         self.learning_rate = learning_rate
@@ -25,7 +26,7 @@ class TorchLinearRegression(torch.nn.Module):
         self.optimizer = None
 
     def fit(self, X=None, y=None, plot_loss=False):
-        X_tfh = tensorize_segments(X, self.n_h)
+        X_tfh = tensorize_segments(X, self.n_h, n_fut=self.n_fut)
         n_t, n_f, n_h = X_tfh.shape
         x_train = Variable(torch.from_numpy(X_tfh.reshape(n_t, n_f*n_h)).type(torch.FloatTensor))
 
@@ -61,6 +62,7 @@ class TorchLinearRegression(torch.nn.Module):
         self.info = {'type': 'TorchLinearRegression',
                      'n_f': n_f,
                      'n_h': n_h,
+                     'n_fut': self.n_fut,
                      'c': self.linear.bias.detach().cpu().numpy(),
                      'k_fh': w.reshape(n_f, n_h), # for convenience,
                      'b': self.linear.bias.detach().cpu().numpy(),
@@ -74,7 +76,7 @@ class TorchLinearRegression(torch.nn.Module):
         '''
         Predictions
         '''
-        X_tfh = tensorize_segments(X, self.n_h)
+        X_tfh = tensorize_segments(X, self.n_h, n_fut=self.n_fut)
         n_t, n_f, n_h = X_tfh.shape
         x = torch.from_numpy(X_tfh.reshape(n_t, n_f*n_h)).type(torch.FloatTensor)
 
@@ -116,9 +118,11 @@ class TorchLinearRegression(torch.nn.Module):
             self.linear = self.linear0.cuda()
 
 class TorchNRF(torch.nn.Module):
-    def __init__(self, n_hidden=3, n_h=15, learning_rate=1e-4, epochs=15000, lamb=1e-5):
+    def __init__(self, n_hidden=3, n_h=15, n_fut=0,
+                 learning_rate=1e-4, epochs=15000, lamb=1e-5):
         super(TorchNRF, self).__init__()
         self.n_h = n_h
+        self.n_fut = n_fut
         self.linear1 = None
         self.linear2 = None
         self.linear3 = None
@@ -132,7 +136,7 @@ class TorchNRF(torch.nn.Module):
         self.optimizer = None
 
     def fit(self, X=None, y=None, plot_loss=False):
-        X_tfh = tensorize_segments(X, self.n_h)
+        X_tfh = tensorize_segments(X, self.n_h, n_fut=self.n_fut)
         n_t, n_f, n_h = X_tfh.shape
         x_train = Variable(torch.from_numpy(X_tfh.reshape(n_t, n_f*n_h)).type(torch.FloatTensor))
 
@@ -174,6 +178,7 @@ class TorchNRF(torch.nn.Module):
         self.info = {type: 'TorchNRF',
                      'n_f': n_f,
                      'n_h': n_h,
+                     'n_fut': self.n_fut,
                      'n_hidden': self.n_hidden,
                      'k_fh': w1.reshape(n_f, n_h*self.n_hidden), # just for convenience
                      'b1': self.linear1.bias.detach().cpu().numpy(),
@@ -192,7 +197,7 @@ class TorchNRF(torch.nn.Module):
         '''
         Predictions
         '''
-        X_tfh = tensorize_segments(X, self.n_h)
+        X_tfh = tensorize_segments(X, self.n_h, n_fut=self.n_fut)
         n_t, n_f, n_h = X_tfh.shape
         x = torch.from_numpy(X_tfh.reshape(n_t, n_f*n_h)).type(torch.FloatTensor)
         if torch.cuda.is_available():

@@ -17,7 +17,13 @@ def show_strf(k_fh):
     Show STRF using blue->red colormap, scaled so that zero is in the centre (white)
     '''
     mx = max([np.max(k_fh), np.abs(np.min(k_fh))])
-    plt.imshow(k_fh, cmap='bwr', vmin=-mx, vmax=mx)
+    plt.imshow(k_fh, cmap='bwr', vmin=-mx, vmax=mx,
+               interpolation='none')
+    # if aspect ratio is too extreme, scale so the plot is square
+    ratio = k_fh.shape[0]/k_fh.shape[1]
+    if ratio > 4:
+        ax = plt.gca()
+        ax.set_aspect(1/ratio)
 
 def select_idxes(X_tfs, idxes):
     '''
@@ -112,18 +118,18 @@ def combine_segments(X1, X2):
     '''
     return [np.stack((x1, x2), axis=1) for x1, x2 in zip(X1, X2)]
 
-def tensorize_segments(X, n_h):
+def tensorize_segments(X, n_h, n_fut=0):
     '''
     If X is a list, tensorize segments and concatenate them.
     If X is 3D, do nothing
     If X is 2D, tensorize it
     '''
     if isinstance(X, list):
-        X = [tensorize_tfh(x, n_h) for x in X]
+        X = [tensorize_tfh(x, n_h, n_fut) for x in X]
         return np.concatenate(X, 0)
     if len(X.shape) == 3:
         return X
-    return tensorize_tfh(X, n_h)
+    return tensorize_tfh(X, n_h, n_fut)
 
 def concatenate_segments(y, mean=False):
     '''
@@ -135,15 +141,46 @@ def concatenate_segments(y, mean=False):
         y = np.mean(y, 1)
     return y
 
-def tensorize_tfh(X_tf, n_h):
+def tensorize_tfh(X_tf, n_h, n_fut=0):
     '''
     Tensorise a continuous X_tf, to produce X_tfh with n_h history steps
+    and optionally n_fut future steps
     '''
     n_t, n_f = X_tf.shape
     X_tfs = []
     for h in range(n_h-1, -1, -1):
         X_tfs.append(np.concatenate([np.zeros((h, n_f)), X_tf[:n_t-h, :]], 0))
-    return np.stack(X_tfs, axis=-1)
+    for h in range(1, n_fut+1):
+        X_tfs.append(np.concatenate([X_tf[h:, :], np.zeros((h, n_f))], 0))
+
+    X_tfh = np.stack(X_tfs, axis=-1)
+    return X_tfh
+
+def test_tensorize_tfh():
+    '''
+    Test tensorize_tfh using arandom sized array
+    '''
+    n_t, n_f = np.random.randint(1, 50, (2))
+    n_h, n_fut = np.random.randint(1, n_t+1, (2))
+    print(n_t, n_f, n_h, n_fut)
+    X_tf = np.tile(np.arange(n_t)[:, np.newaxis], (1, n_f))
+    X_fht = tensorize_tfh(X_tf, n_h=n_h, n_fut=n_fut)
+    print(X_fht.shape)
+
+    success = True
+    for t in range(n_t):
+        for f in range(n_f):
+            for h in range(0, n_h+n_fut):
+                # the zero-time bin should be in the last history slot,
+                # so we expect x=t when h=(n_h-1)
+                # so offset should be zero when h=n_h-1
+                x = max(t+h-n_h+1, 0)
+                if x > n_t-1:
+                    x = 0
+                if x != X_fht[t, f, h]:
+                    success = False
+                    print('(%d, %d, %d): expected %d, actual %d' % (t, f, h, x, X_fht[t, f, h]))
+    return success
 
 def split_tx(X_tf, segment_lengths):
     '''
@@ -184,7 +221,8 @@ class ElNet(ElasticNetCV):
     or a list of X_tfs. To make this faster, you can use 3 folds (cv=3),
     reduce n_alphas (to say 10), and set l1_ratio to 'lasso' or 'ridge'
     '''
-    def __init__(self, n_h=15, *, l1_ratio=None, eps=1e-3, n_alphas=100, alphas=None,
+    def __init__(self, n_h=15, n_fut=0, *, l1_ratio=None, eps=1e-3,
+                 n_alphas=100, alphas=None,
                  fit_intercept=True, normalize=False, precompute='auto',
                  max_iter=1000, tol=1e-4, cv=None, copy_X=True,
                  verbose=0, n_jobs=-1, positive=False, random_state=None,
@@ -192,6 +230,7 @@ class ElNet(ElasticNetCV):
 
         self.kernel = None
         self.n_h = n_h
+        self.n_fut = n_fut
         self.n_f = None
         self.l1_ratio = None
 
@@ -216,7 +255,7 @@ class ElNet(ElasticNetCV):
         '''
         Fit elnet model
         '''
-        X_tfh = tensorize_segments(X, self.n_h)
+        X_tfh = tensorize_segments(X, self.n_h, n_fut=self.n_fut)
         y_t = concatenate_segments(y, mean=True)
         n_t, self.n_f, _ = X_tfh.shape
 
@@ -224,8 +263,9 @@ class ElNet(ElasticNetCV):
         self.kernel = {'type': 'ElNet',
                        'n_f': self.n_f,
                        'n_h': self.n_h,
+                       'n_fut': self.n_fut,
                        'c': self.intercept_,
-                       'k_fh': self.coef_.reshape(self.n_f, self.n_h),
+                       'k_fh': self.coef_.reshape(self.n_f, self.n_h+self.n_fut),
                        'alpha': self.alpha_,
                        'l1_ratio': self.l1_ratio_
                       }
@@ -234,7 +274,7 @@ class ElNet(ElasticNetCV):
         '''
         Predictions of elnet model
         '''
-        X_tfh = tensorize_segments(X, self.n_h)
+        X_tfh = tensorize_segments(X, self.n_h, n_fut=self.n_fut)
         n_t = X_tfh.shape[0]
         return super().predict(X_tfh.reshape(n_t, -1))
 
@@ -264,20 +304,24 @@ class ElNet(ElasticNetCV):
 
 class LinearKernel():
     '''
-    Shell class for reloading dumped kernels
+    Shell class for reloading dumped kernels.
     '''
     def __init__(self):
         self.kernel = None
 
     def reload(self, kernel):
         self.n_h = kernel['n_h']
+        if 'n_fut' in kernel:
+            self.n_fut = kernel['n_fut']
+        else:
+            self.n_fut = 0
         self.kernel = kernel
 
     def predict(self, X=None):
         '''
         Predictions of separable kernel model
         '''
-        X_tfh = tensorize_segments(X, self.n_h)
+        X_tfh = tensorize_segments(X, self.n_h, self.n_fut)
         return conv_tfh(X_tfh, self.kernel)
 
     def score(self, X=None, y=None, sample_weight=None):
@@ -309,16 +353,17 @@ class SeparableKernel(RegressorMixin):
     Scikit-learn compatible separable kernel
     '''
 
-    def __init__(self, n_h=15, n_iter=15):
+    def __init__(self, n_h=15, n_fut=0, n_iter=15):
         self.n_iter = n_iter
         self.kernel = None
         self.n_h = n_h
+        self.n_fut = 0
 
     def fit(self, X=None, y=None):
         '''
         Fit separable kernel model
         '''
-        X_tfh = tensorize_segments(X, self.n_h)
+        X_tfh = tensorize_segments(X, self.n_h, self.n_fut)
         y_t = concatenate_segments(y, mean=True)
         self.kernel = sepkernel_tfh(X_tfh, y_t, n_iter=self.n_iter)
         self.kernel['type'] = 'SeparableKernel'
@@ -327,7 +372,7 @@ class SeparableKernel(RegressorMixin):
         '''
         Predictions of separable kernel model
         '''
-        X_tfh = tensorize_segments(X, self.n_h)
+        X_tfh = tensorize_segments(X, self.n_h, self.n_fut)
         return sepconv_tfh(X_tfh, self.kernel)
 
     def score(self, X=None, y=None, sample_weight=None):
@@ -425,17 +470,18 @@ class RankNKernel(RegressorMixin):
     Scikit-learn compatible rank-n kernel
     '''
 
-    def __init__(self, n_h=15, n_folds=10, n_iter=15):
+    def __init__(self, n_h=15, n_fut=0, n_folds=10, n_iter=15):
         self.n_iter = n_iter
         self.kernel = None
         self.n_h = n_h
+        self.n_fut = n_fut
         self.n_folds = n_folds
 
     def fit(self, X=None, y=None, check=False):
         '''
         Fit rank-n kernel model.
         '''
-        X_tfh = tensorize_segments(X, self.n_h)
+        X_tfh = tensorize_segments(X, self.n_h, self.n_fut)
         _, n_f, n_h = X_tfh.shape
         y_t = concatenate_segments(y, mean=True)
 
@@ -487,7 +533,7 @@ class RankNKernel(RegressorMixin):
         '''
         Predictions of separable kernel model
         '''
-        X_tfh = tensorize_segments(X, self.n_h)
+        X_tfh = tensorize_segments(X, self.n_h, self.n_fut)
         return conv_tfh(X_tfh, self.kernel)
 
     def score(self, X=None, y=None, sample_weight=None):
