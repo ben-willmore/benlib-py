@@ -85,6 +85,34 @@ def cosramp_onoff(n_samples, ramp_samples):
     r = cosramp_on(n_samples, ramp_samples)
     return r * r[::-1]
 
+def apply_ild(fs, snd, ild_dB=10):
+    left = snd
+    right = snd * level2amp(ild_dB)
+    return np.stack((left, right))
+
+def apply_itd(fs, snd, itd_us=100):
+    shift_samples = np.int(np.abs(itd_us*1000/fs))
+    leading = np.concatenate((snd, np.zeros(shift_samples)))
+    lagging = np.concatenate((np.zeros(shift_samples), snd))
+    if itd_us<0:
+        return np.stack((leading, lagging))
+    else:
+        return np.stack((lagging, leading))
+
+def ild_stimulus(fs, len_s, f0, ild_dB):
+    n_samples = np.int(len_s*fs)
+    snd_mono = puretone(fs, n_samples, f0)
+    ramplen_ms = 5
+    snd = cosramp_onoff(n_samples, ramp_samples=np.round(ramplen_ms/1000*fs))
+    return apply_ild(fs, snd_mono, ild_dB=ild_dB)
+
+def itd_stimulus(fs, len_s, f0, itd_us):
+    n_samples = np.int(len_s*fs)
+    snd_mono = puretone(fs, n_samples, f0)
+    ramplen_ms = 5
+    snd = cosramp_onoff(n_samples, ramp_samples=np.round(ramplen_ms/1000*fs))
+    return apply_itd(fs, snd_mono, itd_us=itd_us)
+
 def binaural_beats(f_s, n_samples, f_l=520, f_r=530):
     '''
     Binaural beat stimulus
@@ -105,3 +133,15 @@ def show_spectrogram(*args, **kwargs):
     _, ax = plt.subplots(figsize=(10, 6))
     ax.imshow(s, origin='lower', extent=[np.min(t), np.max(t), np.min(f), np.max(f)])
     ax.set_aspect((np.max(t)-np.min(t))/(np.max(f)-np.min(f))/2)
+
+def ndarray2wavbytes(fs, snd):
+    nchannels = snd.shape[0]
+    mx = np.max(np.abs(snd))
+    snd_b = (snd.transpose().ravel()/mx*32767.0).astype(np.int16).tostring()
+    output = BytesIO()
+    with wave.open(output, 'w') as s:
+        s.setnchannels(nchannels)
+        s.setsampwidth(2)
+        s.setframerate(fs)
+        s.writeframesraw(snd_b)
+    return output.getvalue()
