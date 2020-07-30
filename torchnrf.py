@@ -46,7 +46,8 @@ class TorchLinearRegression(torch.nn.Module):
             # clear gradient buffers
             self.optimizer.zero_grad()
             outputs = self.forward(x_train)
-            loss = self.criterion(outputs, y_train) + self.lamb*(self.linear.weight.abs()).sum()
+            loss = self.criterion(outputs, y_train) + \
+                self.lamb*(self.linear.weight.norm(p=1))
 
             # get gradients w.r.t to parameters
             loss.backward()
@@ -131,11 +132,15 @@ class TorchNRF(torch.nn.Module):
         self.learning_rate = learning_rate
         self.epochs = epochs
         self.lamb = lamb
+        self.x_prediction = None
+        self.y_prediction = None
+        self.info = None
 
         self.criterion = torch.nn.MSELoss()
         self.optimizer = None
 
     def fit(self, X=None, y=None, plot_loss=False):
+        print('normb')
         X_tfh = tensorize_segments(X, self.n_h, n_fut=self.n_fut)
         n_t, n_f, n_h = X_tfh.shape
         x_train = Variable(torch.from_numpy(X_tfh.reshape(n_t, n_f*n_h)).type(torch.FloatTensor))
@@ -163,8 +168,8 @@ class TorchNRF(torch.nn.Module):
             self.optimizer.zero_grad()
             outputs = self.forward(x_train)
             loss = self.criterion(outputs, y_train) + \
-                self.lamb*(self.linear1.weight.abs()).sum()
-#                 self.lamb*(self.linear2.weight.abs()).sum()
+                self.lamb*(self.linear1.weight.norm(p=1))
+
             loss.backward()
             self.optimizer.step()
 
@@ -180,7 +185,8 @@ class TorchNRF(torch.nn.Module):
                      'n_h': n_h,
                      'n_fut': self.n_fut,
                      'n_hidden': self.n_hidden,
-                     'k_fh': w1.reshape(n_f, n_h*self.n_hidden), # just for convenience
+                     'k_fh': w1.reshape(self.n_hidden, n_f, n_h).transpose((1, 0, 2)). \
+                        reshape(n_f, n_h*self.n_hidden),
                      'b1': self.linear1.bias.detach().cpu().numpy(),
                      'w1': w1,
                      'b2': self.linear2.bias.detach().cpu().numpy(),
@@ -197,12 +203,35 @@ class TorchNRF(torch.nn.Module):
         '''
         Predictions
         '''
+        with torch.no_grad():
+            X_tfh = tensorize_segments(X, self.n_h, n_fut=self.n_fut)
+            n_t, n_f, n_h = X_tfh.shape
+            x = torch.from_numpy(X_tfh.reshape(n_t, n_f*n_h)).type(torch.FloatTensor)
+            if torch.cuda.is_available():
+                x = x.cuda()
+            out = self.forward(x)
+        return out.detach().cpu().numpy().ravel()
+
+    def store_prediction(self, X=None, y=None):
+        '''
+        Tensorize and store prediction set for later use
+        '''
         X_tfh = tensorize_segments(X, self.n_h, n_fut=self.n_fut)
         n_t, n_f, n_h = X_tfh.shape
-        x = torch.from_numpy(X_tfh.reshape(n_t, n_f*n_h)).type(torch.FloatTensor)
-        if torch.cuda.is_available():
-            x = x.cuda()
-        out = self.forward(x)
+        self.x_prediction = torch.from_numpy(X_tfh.reshape(n_t, n_f*n_h)).type(torch.FloatTensor)
+        self.y_prediction = concatenate_segments(y)
+
+    def predict_stored(self):
+        '''
+        Predictions on stored set
+        '''
+        if self.x_prediction is None:
+            raise ValueError('self.x_prediction is not set')
+        x = self.x_prediction
+        with torch.no_grad():
+            if torch.cuda.is_available():
+                x = x.cuda()
+            out = self.forward(x)
         return out.detach().cpu().numpy().ravel()
 
     def score(self, X=None, y=None, sample_weight=None):
@@ -211,6 +240,21 @@ class TorchNRF(torch.nn.Module):
         '''
         y = concatenate_segments(y)
         y_hat = self.predict(X)
+
+        if len(y.shape) == 1:
+            return np.corrcoef(y, y_hat)[0, 1]
+
+        return calc_CC_norm(y, y_hat)
+
+    def score_stored(self, sample_weight=None):
+        '''
+        Score stored data
+        '''
+        y_hat = self.predict_stored()
+
+        if self.y_prediction is None:
+            raise ValueError('self.y_prediction is not set')
+        y = self.y_prediction
 
         if len(y.shape) == 1:
             return np.corrcoef(y, y_hat)[0, 1]
