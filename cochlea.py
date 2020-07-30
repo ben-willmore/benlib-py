@@ -126,7 +126,11 @@ def cochleagram(y_t, fs_hz, dt_ms, spacing='log', freq_info=None):
 
     # get actual dt (which is an integer number of samples)
     dt_sec_nominal = dt_ms/1000
-    dt_bins = np.round(dt_sec_nominal*params['fs_hz'])
+    dt_bins = dt_sec_nominal*params['fs_hz']
+    if dt_bins%1 != 0:
+        print('Warning -- rounding dt to an integer number of samples')
+        dt_bins = np.round(dt_bins)
+
     params['dt_sec'] = dt_bins/params['fs_hz']
 
     # get window, overlap sizes
