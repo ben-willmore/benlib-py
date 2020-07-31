@@ -111,8 +111,8 @@ class TorchLinearRegression(torch.nn.Module):
         '''
         Reinitialise network from result of self.dump()
         '''
-        n_f, n_h = info['n_f'], info['n_h']
-        self.linear = torch.nn.Linear(n_f*n_h, 1, bias=True)
+        self.n_f, self.n_h, self.n_fut = info['n_f'], info['n_h'], info['n_fut']
+        self.linear = torch.nn.Linear(self.n_f*(self.n_h+self.n_fut), 1, bias=True)
         self.linear.bias = torch.nn.Parameter(torch.from_numpy(info['b']))
         self.linear.weight = torch.nn.Parameter(torch.from_numpy(info['w']))
         if torch.cuda.is_available():
@@ -323,9 +323,9 @@ class TorchNRF(torch.nn.Module):
         '''
         Reinitialise network from result of self.dump()
         '''
-        n_f, n_h = info['n_f'], info['n_h']
+        self.n_f, self.n_h, self.n_fut = info['n_f'], info['n_h'], info['n_fut']
         self.n_hidden = info['n_hidden']
-        self.linear1 = torch.nn.Linear(n_f*n_h, self.n_hidden, bias=True)
+        self.linear1 = torch.nn.Linear(self.n_f*(self.n_h+self.n_fut), self.n_hidden, bias=True)
         self.linear1.bias = torch.nn.Parameter(torch.from_numpy(info['b1']))
         self.linear1.weight = torch.nn.Parameter(torch.from_numpy(info['w1']))
         self.linear2 = torch.nn.Linear(self.n_hidden, 1, bias=True)
