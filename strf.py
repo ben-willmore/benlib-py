@@ -12,18 +12,51 @@ from sklearn.model_selection import KFold
 from scipy.linalg import lstsq
 from benlib.utils import calc_CC_norm
 
-def show_strf(k_fh):
+def show_strf(k_fh, xlim=None, ylim=None, xticks=None, yticks=None, sort_order=None):
     '''
     Show STRF using blue->red colormap, scaled so that zero is in the centre (white)
     '''
+    if sort_order is not None:
+        k_fh = np.array(k_fh)[sort_order, :]
+
     mx = max([np.max(k_fh), np.abs(np.min(k_fh))])
-    plt.imshow(k_fh, cmap='bwr', vmin=-mx, vmax=mx,
-               interpolation='none')
-    # if aspect ratio is too extreme, scale so the plot is square
-    ratio = k_fh.shape[0]/k_fh.shape[1]
-    if ratio > 4:
-        ax = plt.gca()
-        ax.set_aspect(1/ratio)
+
+    if xlim is None:
+        xlim = [0, k_fh.shape[1]-1]
+    xvals = np.linspace(np.min(xlim), np.max(xlim), k_fh.shape[1])
+
+    if ylim is None:
+        ylim = [0, k_fh.shape[0]-1]
+    yvals = np.linspace(np.min(ylim), np.max(ylim), k_fh.shape[0])
+
+    plt.pcolormesh(xvals, yvals, k_fh, cmap='seismic', vmin=-mx, vmax=mx)
+
+    ax = plt.gca()
+
+    if xticks is not None:
+        ax.set_xticks(xticks)
+
+    if yticks is not None:
+        ax.set_yticks(yticks)
+
+
+    # # if aspect ratio is too extreme, scale so the plot is square
+    # ratio = (xlim[1]-xlim[0])/(ylim[1]-ylim[0])
+    # if ratio > 4:
+    #     ax.set_aspect(1/ratio)
+
+def get_bf(k_fh):
+    '''
+    Get best frequency from k_fh -- defined here as the frequency
+    with highest positive coefficient summed over time. Negative
+    coefficients are ignored.
+    '''
+    sum_pos = np.maximum(k_fh, 0).sum(axis=1)
+
+    idx_max = np.where(sum_pos==sum_pos.max())[0]
+    if idx_max.shape[0]>1:
+        return int(np.median(idx_max))
+    return idx_max[0]
 
 def select_idxes(X_tfs, idxes):
     '''
@@ -268,6 +301,83 @@ class ElNet(ElasticNetCV):
                        'k_fh': self.coef_.reshape(self.n_f, self.n_h+self.n_fut),
                        'alpha': self.alpha_,
                        'l1_ratio': self.l1_ratio_
+                      }
+
+    def predict(self, X=None):
+        '''
+        Predictions of elnet model
+        '''
+        X_tfh = tensorize_segments(X, self.n_h, n_fut=self.n_fut)
+        n_t = X_tfh.shape[0]
+        return super().predict(X_tfh.reshape(n_t, -1))
+
+    def score(self, X=None, y=None, sample_weight=None):
+        '''
+        Score of elnet model
+        '''
+        y_t = concatenate_segments(y)
+        y_hat = self.predict(X)
+
+        if len(y_t.shape) == 1:
+            return np.corrcoef(y_t, y_hat)[0, 1]
+
+        return calc_CC_norm(y_t, y_hat)
+
+    def show(self):
+        '''
+        Show the kernel
+        '''
+        show_strf(self.kernel['k_fh'])
+
+    def dump(self):
+        '''
+        Return most important parameters in a pickleable format
+        '''
+        return self.kernel
+
+class ElNetNoCV(ElasticNet):
+    '''
+    ** VERY ROUGH **
+    Scikit-learn compatible elnet kernel. Works with either a continuous X_tf,
+    or a list of X_tfs. To make this faster, you can use 3 folds (cv=3),
+    reduce n_alphas (to say 10), and set l1_ratio to 'lasso' or 'ridge'
+    '''
+    def __init__(self, n_h=15, n_fut=0, *,
+                 alpha=1.0, l1_ratio=0.5,
+                 fit_intercept=True, normalize=False, precompute=False,
+                 max_iter=1000, tol=1e-4, warm_start=False,
+                 positive=False, random_state=None,
+                 selection='cyclic'):
+
+        self.kernel = None
+        self.n_h = n_h
+        self.n_fut = n_fut
+        self.n_f = None
+        self.l1_ratio = None
+
+        super().__init__(alpha=alpha, l1_ratio=l1_ratio,
+                         fit_intercept=fit_intercept, normalize=normalize, precompute=precompute,
+                         max_iter=max_iter, tol=tol, warm_start=warm_start,
+                         positive=positive,
+                         random_state=random_state, selection=selection)
+
+    def fit(self, X=None, y=None):
+        '''
+        Fit elnet model
+        '''
+        X_tfh = tensorize_segments(X, self.n_h, n_fut=self.n_fut)
+        y_t = concatenate_segments(y, mean=True)
+        n_t, self.n_f, _ = X_tfh.shape
+
+        super().fit(X_tfh.reshape(n_t, -1), y_t)
+        self.kernel = {'type': 'ElNet',
+                       'n_f': self.n_f,
+                       'n_h': self.n_h,
+                       'n_fut': self.n_fut,
+                       'c': self.intercept_,
+                       'k_fh': self.coef_.reshape(self.n_f, self.n_h+self.n_fut),
+                       'alpha': self.alpha,
+                       'l1_ratio': self.l1_ratio
                       }
 
     def predict(self, X=None):
@@ -553,6 +663,7 @@ class RankNKernel(RegressorMixin):
         Show the kernel
         '''
         show_strf(self.kernel['k_fh'])
+
 
     def dump(self):
         '''
