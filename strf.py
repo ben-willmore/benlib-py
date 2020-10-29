@@ -7,7 +7,7 @@ STRF estimation and display functions
 import numpy as np
 from matplotlib import pyplot as plt
 from sklearn.base import RegressorMixin
-from sklearn.linear_model import ElasticNetCV
+from sklearn.linear_model import ElasticNet, ElasticNetCV
 from sklearn.model_selection import KFold
 from scipy.linalg import lstsq
 from benlib.utils import calc_CC_norm
