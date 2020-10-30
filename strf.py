@@ -254,7 +254,7 @@ class ElNet(ElasticNetCV):
     or a list of X_tfs. To make this faster, you can use 3 folds (cv=3),
     reduce n_alphas (to say 10), and set l1_ratio to 'lasso' or 'ridge'
     '''
-    def __init__(self, n_h=15, n_fut=0, *, l1_ratio=None, eps=1e-3,
+    def __init__(self, l1_ratio=None, eps=1e-3,
                  n_alphas=100, alphas=None,
                  fit_intercept=True, normalize=False, precompute='auto',
                  max_iter=1000, tol=1e-4, cv=None, copy_X=True,
@@ -262,9 +262,6 @@ class ElNet(ElasticNetCV):
                  selection='cyclic'):
 
         self.kernel = None
-        self.n_h = n_h
-        self.n_fut = n_fut
-        self.n_f = None
         self.l1_ratio = None
 
         if isinstance(l1_ratio, str):
@@ -288,17 +285,14 @@ class ElNet(ElasticNetCV):
         '''
         Fit elnet model
         '''
-        X_tfh = tensorize_segments(X, self.n_h, n_fut=self.n_fut)
-        y_t = concatenate_segments(y, mean=True)
-        n_t, self.n_f, _ = X_tfh.shape
+        n_t, n_f, n_h = X.shape
 
-        super().fit(X_tfh.reshape(n_t, -1), y_t)
+        super().fit(X.reshape(n_t, -1), y)
         self.kernel = {'type': 'ElNet',
-                       'n_f': self.n_f,
-                       'n_h': self.n_h,
-                       'n_fut': self.n_fut,
+                       'n_f': n_f,
+                       'n_h': n_h,
                        'c': self.intercept_,
-                       'k_fh': self.coef_.reshape(self.n_f, self.n_h+self.n_fut),
+                       'k_fh': self.coef_.reshape(n_f, n_h),
                        'alpha': self.alpha_,
                        'l1_ratio': self.l1_ratio_
                       }
@@ -307,21 +301,19 @@ class ElNet(ElasticNetCV):
         '''
         Predictions of elnet model
         '''
-        X_tfh = tensorize_segments(X, self.n_h, n_fut=self.n_fut)
-        n_t = X_tfh.shape[0]
-        return super().predict(X_tfh.reshape(n_t, -1))
+        n_t = X.shape[0]
+        return super().predict(X.reshape(n_t, -1))
 
     def score(self, X=None, y=None, sample_weight=None):
         '''
         Score of elnet model
         '''
-        y_t = concatenate_segments(y)
         y_hat = self.predict(X)
 
-        if len(y_t.shape) == 1:
-            return np.corrcoef(y_t, y_hat)[0, 1]
+        if len(y.shape) == 1:
+            return np.corrcoef(y, y_hat)[0, 1]
 
-        return calc_CC_norm(y_t, y_hat)
+        return calc_CC_norm(y, y_hat)
 
     def show(self):
         '''
@@ -338,22 +330,24 @@ class ElNet(ElasticNetCV):
 class ElNetNoCV(ElasticNet):
     '''
     ** VERY ROUGH **
-    Scikit-learn compatible elnet kernel. Works with either a continuous X_tf,
-    or a list of X_tfs. To make this faster, you can use 3 folds (cv=3),
-    reduce n_alphas (to say 10), and set l1_ratio to 'lasso' or 'ridge'
+    Scikit-learn compatible elnet kernel. No hyperparameter selection through cross-validation.
     '''
-    def __init__(self, n_h=15, n_fut=0, *,
-                 alpha=1.0, l1_ratio=0.5,
+    def __init__(self,
+                 alpha=1.0, l1_ratio=1.0,
                  fit_intercept=True, normalize=False, precompute=False,
                  max_iter=1000, tol=1e-4, warm_start=False,
                  positive=False, random_state=None,
                  selection='cyclic'):
 
+        if isinstance(l1_ratio, str):
+            if l1_ratio == 'lasso':
+                print('Using lasso (l1_ratio = 1.0)')
+                l1_ratio = 1.0
+            elif l1_ratio == 'ridge':
+                print('Using ridge (l1_ratio = 0.001)')
+                l1_ratio = 0.001
+
         self.kernel = None
-        self.n_h = n_h
-        self.n_fut = n_fut
-        self.n_f = None
-        self.l1_ratio = None
 
         super().__init__(alpha=alpha, l1_ratio=l1_ratio,
                          fit_intercept=fit_intercept, normalize=normalize, precompute=precompute,
@@ -365,17 +359,15 @@ class ElNetNoCV(ElasticNet):
         '''
         Fit elnet model
         '''
-        X_tfh = tensorize_segments(X, self.n_h, n_fut=self.n_fut)
-        y_t = concatenate_segments(y, mean=True)
-        n_t, self.n_f, _ = X_tfh.shape
+        n_t, n_f, n_h = X.shape
 
-        super().fit(X_tfh.reshape(n_t, -1), y_t)
-        self.kernel = {'type': 'ElNet',
-                       'n_f': self.n_f,
-                       'n_h': self.n_h,
-                       'n_fut': self.n_fut,
+        super().fit(X.reshape(n_t, -1), y)
+
+        self.kernel = {'type': 'ElNetNoCV',
+                       'n_f': n_f,
+                       'n_h': n_h,
                        'c': self.intercept_,
-                       'k_fh': self.coef_.reshape(self.n_f, self.n_h+self.n_fut),
+                       'k_fh': self.coef_.reshape(n_f, n_h),
                        'alpha': self.alpha,
                        'l1_ratio': self.l1_ratio
                       }
@@ -384,21 +376,20 @@ class ElNetNoCV(ElasticNet):
         '''
         Predictions of elnet model
         '''
-        X_tfh = tensorize_segments(X, self.n_h, n_fut=self.n_fut)
-        n_t = X_tfh.shape[0]
-        return super().predict(X_tfh.reshape(n_t, -1))
+        n_t = X.shape[0]
+
+        return super().predict(X.reshape(n_t, -1))
 
     def score(self, X=None, y=None, sample_weight=None):
         '''
         Score of elnet model
         '''
-        y_t = concatenate_segments(y)
         y_hat = self.predict(X)
 
-        if len(y_t.shape) == 1:
-            return np.corrcoef(y_t, y_hat)[0, 1]
+        if len(y.shape) == 1:
+            return np.corrcoef(y, y_hat)[0, 1]
 
-        return calc_CC_norm(y_t, y_hat)
+        return calc_CC_norm(y, y_hat)
 
     def show(self):
         '''
@@ -420,31 +411,24 @@ class LinearKernel():
         self.kernel = None
 
     def reload(self, kernel):
-        self.n_h = kernel['n_h']
-        if 'n_fut' in kernel:
-            self.n_fut = kernel['n_fut']
-        else:
-            self.n_fut = 0
         self.kernel = kernel
 
     def predict(self, X=None):
         '''
         Predictions of separable kernel model
         '''
-        X_tfh = tensorize_segments(X, self.n_h, self.n_fut)
-        return conv_tfh(X_tfh, self.kernel)
+        return conv_tfh(X, self.kernel)
 
     def score(self, X=None, y=None, sample_weight=None):
         '''
         Sore of separable kernel model
         '''
-        y_t = concatenate_segments(y)
         y_hat = self.predict(X)
 
-        if len(y_t.shape) == 1:
-            return np.corrcoef(y_t, y_hat)[0, 1]
+        if len(y.shape) == 1:
+            return np.corrcoef(y, y_hat)[0, 1]
 
-        return calc_CC_norm(y_t, y_hat)
+        return calc_CC_norm(y, y_hat)
 
     def show(self):
         '''
@@ -463,39 +447,33 @@ class SeparableKernel(RegressorMixin):
     Scikit-learn compatible separable kernel
     '''
 
-    def __init__(self, n_h=15, n_fut=0, n_iter=15):
+    def __init__(self, n_iter=15):
         self.n_iter = n_iter
         self.kernel = None
-        self.n_h = n_h
-        self.n_fut = 0
 
     def fit(self, X=None, y=None):
         '''
         Fit separable kernel model
         '''
-        X_tfh = tensorize_segments(X, self.n_h, self.n_fut)
-        y_t = concatenate_segments(y, mean=True)
-        self.kernel = sepkernel_tfh(X_tfh, y_t, n_iter=self.n_iter)
+        self.kernel = sepkernel_tfh(X, y, n_iter=self.n_iter)
         self.kernel['type'] = 'SeparableKernel'
 
     def predict(self, X=None):
         '''
         Predictions of separable kernel model
         '''
-        X_tfh = tensorize_segments(X, self.n_h, self.n_fut)
-        return sepconv_tfh(X_tfh, self.kernel)
+        return sepconv_tfh(X, self.kernel)
 
     def score(self, X=None, y=None, sample_weight=None):
         '''
         Sore of separable kernel model
         '''
-        y_t = concatenate_segments(y)
         y_hat = self.predict(X)
 
-        if len(y_t.shape) == 1:
-            return np.corrcoef(y_t, y_hat)[0, 1]
+        if len(y.shape) == 1:
+            return np.corrcoef(y, y_hat)[0, 1]
 
-        return calc_CC_norm(y_t, y_hat)
+        return calc_CC_norm(y, y_hat)
 
     def show(self):
         '''
@@ -583,34 +561,30 @@ class RankNKernel(RegressorMixin):
     def __init__(self, n_h=15, n_fut=0, n_folds=10, n_iter=15):
         self.n_iter = n_iter
         self.kernel = None
-        self.n_h = n_h
-        self.n_fut = n_fut
         self.n_folds = n_folds
 
     def fit(self, X=None, y=None, check=False):
         '''
         Fit rank-n kernel model.
         '''
-        X_tfh = tensorize_segments(X, self.n_h, self.n_fut)
-        _, n_f, n_h = X_tfh.shape
-        y_t = concatenate_segments(y, mean=True)
+        n_t, n_f, n_h = X.shape
 
         kfolds = KFold(n_splits=self.n_folds)
-        sepkernel = SeparableKernel(n_h=self.n_h, n_iter=self.n_iter)
+        sepkernel = SeparableKernel(n_iter=self.n_iter)
 
-        resid = y_t
+        resid = y
         rank = 0
 
         # find best rank using cross-validation
         while True:
             scores = np.zeros(self.n_folds)
-            for i, (train_idx, test_idx) in enumerate(kfolds.split(X_tfh)):
-                sepkernel.fit(X_tfh[train_idx, :], resid[train_idx])
-                scores[i] = sepkernel.score(X_tfh[test_idx, :], resid[test_idx])
+            for i, (train_idx, test_idx) in enumerate(kfolds.split(X)):
+                sepkernel.fit(X[train_idx, :], resid[train_idx])
+                scores[i] = sepkernel.score(X[test_idx, :], resid[test_idx])
             print(rank+1, scores)
             score = np.mean(scores)
             if score > 0:
-                resid = resid - sepkernel.predict(X_tfh)
+                resid = resid - sepkernel.predict(X)
                 rank = rank + 1
             else:
                 break
@@ -619,7 +593,7 @@ class RankNKernel(RegressorMixin):
         rank = max(rank, 1)
 
         # refit kernel on all data using best rank
-        resid = y_t
+        resid = y
         self.kernel = {'type': 'RankNKernel',
                        'n_f': n_f,
                        'n_h': n_h,
@@ -628,35 +602,33 @@ class RankNKernel(RegressorMixin):
                        'rank': rank,
                        }
         for _ in range(rank):
-            sepkernel.fit(X_tfh, resid)
+            sepkernel.fit(X, resid)
             self.kernel['c'] = self.kernel['c'] + sepkernel.kernel['c']
             self.kernel['k_fh'] = self.kernel['k_fh'] + sepkernel.kernel['k_fh']
-            resid = resid - sepkernel.predict(X_tfh)
+            resid = resid - sepkernel.predict(X)
 
         # verify that predictions of overall kernel are identical to those
         # of the summed kernels
         if check:
-            resid_overall = y_t - self.predict(X_tfh)
+            resid_overall = y - self.predict(X)
             assert np.all(np.abs(resid - resid_overall) < 1e-10)
 
     def predict(self, X=None):
         '''
         Predictions of separable kernel model
         '''
-        X_tfh = tensorize_segments(X, self.n_h, self.n_fut)
-        return conv_tfh(X_tfh, self.kernel)
+        return conv_tfh(X, self.kernel)
 
     def score(self, X=None, y=None, sample_weight=None):
         '''
         Sore of separable kernel model
         '''
-        y_t = concatenate_segments(y)
         y_hat = self.predict(X)
 
-        if len(y_t.shape) == 1:
-            return np.corrcoef(y_t, y_hat)[0, 1]
+        if len(y.shape) == 1:
+            return np.corrcoef(y, y_hat)[0, 1]
 
-        return calc_CC_norm(y_t, y_hat)
+        return calc_CC_norm(y, y_hat)
 
     def show(self):
         '''
