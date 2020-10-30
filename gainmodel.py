@@ -38,9 +38,9 @@ class GainModel(RegressorMixin):
         Reshape data (if needed)
         and fit. No tensorization needed because X does not contain history
         '''
-        x_t = concatenate_segments(X[0])
-        c_t = concatenate_segments(X[1])
-        y_t = concatenate_segments(y, mean=True)
+        x_t = X[0]
+        c_t = X[1]
+        y_t = y
 
         # get a starting guess by roughly estimating
         # sigmoid parameters from data
@@ -65,15 +65,15 @@ class GainModel(RegressorMixin):
         Reshape data (if needed)
         and predict
         '''
-        x_t = concatenate_segments(X[0])
-        c_t = concatenate_segments(X[1])
+        x_t = X[0]
+        c_t = X[1]
+
         return gainmodel(self.fit_params, x_t, c_t)
 
     def score(self, X=None, y=None, sample_weight=None):
         '''
         Score
         '''
-        y = concatenate_segments(y)
         y_hat = self.predict(X)
 
         if len(y.shape) == 1:
@@ -201,9 +201,9 @@ class GainModel3Free(RegressorMixin):
         Reshape data (if needed)
         and fit. No tensorization needed because X doesn't contain history
         '''
-        x_t = concatenate_segments(X[0])
-        c_t = concatenate_segments(X[1])
-        y_t = concatenate_segments(y, mean=True)
+        x_t = X[0]
+        c_t = X[1]
+        y_t = y
 
         # get a starting guess by roughly estimating
         # sigmoid parameters from data
@@ -229,8 +229,9 @@ class GainModel3Free(RegressorMixin):
         Reshape data (if needed)
         and predict
         '''
-        x_t = concatenate_segments(X[0])
-        c_t = concatenate_segments(X[1])
+        x_t = X[0]
+        c_t = X[1]
+
         return gainmodel_3free(self.fit_params, x_t, c_t)
 
     def score(self, X=None, y=None, sample_weight=None):
@@ -365,9 +366,9 @@ class GainModel4Free(RegressorMixin):
         Reshape data (if needed)
         and fit. No tensorization needed because X doesn't contain history
         '''
-        x_t = concatenate_segments(X[0])
-        c_t = concatenate_segments(X[1])
-        y_t = concatenate_segments(y, mean=True)
+        x_t = X[0]
+        c_t = X[1]
+        y_t = y
 
         # fit sigmoid to lo contrast data
         model_lo = Sigmoid()
@@ -383,7 +384,6 @@ class GainModel4Free(RegressorMixin):
         self.fit_params = np.zeros(8)
         self.fit_params[0::2] = model_lo.fit_params
         self.fit_params[1::2] = model_hi.fit_params
-        print(self.fit_params)
         self.fit_data = (x_t, c_t, y_t)
 
     def predict(self, X=None):
@@ -391,8 +391,8 @@ class GainModel4Free(RegressorMixin):
         Reshape data (if needed)
         and predict
         '''
-        x_t = concatenate_segments(X[0])
-        c_t = concatenate_segments(X[1])
+        x_t = X[0]
+        c_t = X[1]
         params_lo = self.fit_params[0::2]
         params_hi = self.fit_params[1::2]
 
@@ -408,7 +408,6 @@ class GainModel4Free(RegressorMixin):
         '''
         Score
         '''
-        y = concatenate_segments(y)
         y_hat = self.predict(X)
 
         if len(y.shape) == 1:
