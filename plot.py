@@ -26,6 +26,58 @@ def bindata(x, y, n_bins=100):
         binned[i, :] = [np.mean(data[idx:idx+binsize, 0]), np.mean(data[idx:idx+binsize, 1])]
     return binned[:, 0], binned[:, 1]
 
+def scatter_cc(x, y, xlim=[0, 1], ylim=[0, 1], marker='.', color='darkblue',
+              plot_central_tendency=True, central_tendency=np.median):
+
+    def _format_ticks(lim, extra_values=None):
+        vals = []
+        if lim[0]<0:
+            vals = [lim[0], 0]
+        else:
+            vals = [lim[0]]
+        if lim[1]>1:
+            vals.extend([lim[1], 1])
+        else:
+            vals.append(lim[1])
+        if extra_values:
+            try:
+                vals.extend(extra_values)
+            except:
+                vals.append(extra_values)
+        vals = np.sort(vals)
+
+        labels = ['%0.2f' % v for v in vals]
+        labels = ['0' if l=='0.00' else l for l in labels]
+        labels = ['1' if l=='1.00' else l for l in labels]
+
+        return vals, labels
+
+    valid_idxes = np.where(np.isfinite(x) & np.isfinite(y))[0]
+    x = np.array(x)[valid_idxes]
+    y = np.array(y)[valid_idxes]
+    plt.scatter(cc_norm_coch_valid, cc_norm_a2a_valid, marker=marker, color=color)
+    plt.plot(xlim, ylim, 'k', linewidth=.75)
+    plt.axis('square')
+    plt.xlim(xlim)
+    plt.ylim(ylim)
+    if plot_central_tendency:
+        ct_x = central_tendency(x)
+        plt.plot([ct_x, ct_x], ylim, color='darkorange')
+        ct_y = central_tendency(y)
+        plt.plot(xlim, [ct_y, ct_y], color='darkorange')
+        plt.scatter(ct_x, ct_y, color='darkorange')
+
+        vals, labels = _format_ticks(xlim, ct_x)
+        plt.xticks(vals, labels)
+        vals, labels = _format_ticks(ylim, ct_y)
+        plt.yticks(vals, labels)
+
+    else:
+        vals, labels = format_ticks(xlim)
+        plt.xticks(vals, labels)
+        vals, labels = format_ticks(ylim)
+        plt.yticks(vals, labels)
+
 class FigViewer():
 
     def __init__(self, fig_dir='.'):
