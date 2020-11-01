@@ -805,3 +805,16 @@ class RankNKernel(RegressorMixin):
         Return most important parameters in a pickleable format
         '''
         return self.kernel
+
+class SplitPct():
+    '''
+    Cross-validation splitter; single split by training percentage, not shuffled
+    '''
+    def __init__(self, train_pct=90):
+        self.train_pct = train_pct
+
+    def split(self, X=None, y=None, groups=None):
+        print(X.shape)
+        n = X.shape[0]
+        n_test = int(self.train_pct/100 * n)
+        return [(np.arange(n_test), np.arange(n_test, n))]
