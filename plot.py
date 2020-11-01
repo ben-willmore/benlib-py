@@ -6,6 +6,7 @@ Plotting functions
 
 from pathlib import Path
 import numpy as np
+from matplotlib import pyplot as plt
 from IPython.display import display, clear_output, HTML
 import ipywidgets as widgets
 
@@ -27,15 +28,15 @@ def bindata(x, y, n_bins=100):
     return binned[:, 0], binned[:, 1]
 
 def scatter_cc(x, y, xlim=[0, 1], ylim=[0, 1], marker='.', color='darkblue',
-              plot_central_tendency=True, central_tendency=np.median):
+               plot_central_tendency=True, central_tendency=np.median):
 
     def _format_ticks(lim, extra_values=None):
         vals = []
-        if lim[0]<0:
+        if lim[0] < 0:
             vals = [lim[0], 0]
         else:
             vals = [lim[0]]
-        if lim[1]>1:
+        if lim[1] > 1:
             vals.extend([lim[1], 1])
         else:
             vals.append(lim[1])
@@ -47,15 +48,15 @@ def scatter_cc(x, y, xlim=[0, 1], ylim=[0, 1], marker='.', color='darkblue',
         vals = np.sort(vals)
 
         labels = ['%0.2f' % v for v in vals]
-        labels = ['0' if l=='0.00' else l for l in labels]
-        labels = ['1' if l=='1.00' else l for l in labels]
+        labels = ['0' if l == '0.00' else l for l in labels]
+        labels = ['1' if l == '1.00' else l for l in labels]
 
         return vals, labels
 
     valid_idxes = np.where(np.isfinite(x) & np.isfinite(y))[0]
     x = np.array(x)[valid_idxes]
     y = np.array(y)[valid_idxes]
-    plt.scatter(cc_norm_coch_valid, cc_norm_a2a_valid, marker=marker, color=color)
+    plt.scatter(x, y, marker=marker, color=color)
     plt.plot(xlim, ylim, 'k', linewidth=.75)
     plt.axis('square')
     plt.xlim(xlim)
@@ -73,9 +74,9 @@ def scatter_cc(x, y, xlim=[0, 1], ylim=[0, 1], marker='.', color='darkblue',
         plt.yticks(vals, labels)
 
     else:
-        vals, labels = format_ticks(xlim)
+        vals, labels = _format_ticks(xlim)
         plt.xticks(vals, labels)
-        vals, labels = format_ticks(ylim)
+        vals, labels = _format_ticks(ylim)
         plt.yticks(vals, labels)
 
 class FigViewer():
