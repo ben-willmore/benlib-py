@@ -403,6 +403,170 @@ class ElNetNoCV(ElasticNet):
         '''
         return self.kernel
 
+
+class ElNetLassoSubset():
+    '''
+    Experimental faster elnet using small groups of regressors to select promising ones (those
+    that have coefficients > 0), then doing final full regression using elnet
+    only on the selected regressors
+    '''
+
+    def __init__(self, l1_ratio='lasso',
+                 group_size=50, eps=1e-3,
+                 n_alphas=100, alphas=None,
+                 fit_intercept=True, normalize=False, precompute='auto',
+                 max_iter=1000, tol=1e-4, cv=None, copy_X=True,
+                 verbose=0, n_jobs=-1, positive=False, random_state=None,
+                 selection='cyclic'):
+
+        self.group_size = group_size
+
+        self.subset_model = ElNet(l1_ratio='lasso', eps=eps,
+                 n_alphas=n_alphas, alphas=alphas,
+                 fit_intercept=fit_intercept, normalize=normalize, precompute=precompute,
+                 max_iter=max_iter, tol=tol, cv=cv, copy_X=copy_X,
+                 verbose=verbose, n_jobs=n_jobs, positive=positive, random_state=random_state,
+                 selection=selection)
+        self.model = ElNet(l1_ratio=l1_ratio, eps=eps,
+                 n_alphas=n_alphas, alphas=alphas,
+                 fit_intercept=fit_intercept, normalize=normalize, precompute=precompute,
+                 max_iter=max_iter, tol=tol, cv=cv, copy_X=copy_X,
+                 verbose=verbose, n_jobs=n_jobs, positive=positive, random_state=random_state,
+                 selection=selection)
+        self.n_regressors = None
+        self.included_regressors = None
+        self.kernel = None
+
+    def fit(self, X=None, y=None):
+        self.n_regressors = X.shape[1]
+        included_regressors = []
+        for start in np.arange(0, self.n_regressors, self.group_size):
+            self.subset_model.fit(X[:,start:start+self.group_size,:], y)
+            k_fh = self.subset_model.dump()['k_fh']
+            included_regressors.append(start+np.where(np.sum(np.abs(k_fh), axis=1)>0)[0])
+        self.included_regressors = np.concatenate(included_regressors)
+        print(len(self.included_regressors))
+        subset_tfh = X[:,self.included_regressors,:]
+
+        self.model.fit(subset_tfh, y)
+        k_fh_subset = self.model.coef_.reshape(self.model.kernel['n_f'], self.model.kernel['n_h'])
+
+        n_h = X.shape[2]
+        k_fh = np.zeros((self.n_regressors, n_h))
+        k_fh[self.included_regressors,:] = k_fh_subset
+
+        self.kernel = {'type': 'ElNetLassoSubset',
+                       'n_f': self.n_regressors,
+                       'n_h': n_h,
+                       'c': self.model.intercept_,
+                       'k_fh': k_fh,
+                       'k_fh_subset': k_fh_subset,
+                       'included_regressors': self.included_regressors,
+                       'alpha': self.model.alpha_,
+                       'l1_ratio': self.model.l1_ratio_
+                      }
+
+    def predict(self, X=None):
+        return self.model.predict(X[:,self.included_regressors,:])
+
+    def score(self, X=None, y=None, sample_weight=None):
+        subset_tfh = X[:,self.included_regressors,:]
+        return self.model.score(subset_tfh, y)
+
+    def show(self):
+        '''
+        Show the kernel
+        '''
+        show_strf(self.kernel['k_fh'])
+
+    def dump(self):
+        '''
+        Return most important parameters in a pickleable format
+        '''
+        return self.kernel
+
+class ElNetRidgeSubset():
+    '''
+    Experimental faster elnet using small groups of regressors to select promising ones (in order of
+    decreasing coefficient values using ridge regression), then doing final full regression using
+    elnet only on the selected regressors
+    '''
+
+    def __init__(self, l1_ratio='lasso',
+                 n_regressors_to_include=100, group_size=50, eps=1e-3,
+                 n_alphas=100, alphas=None,
+                 fit_intercept=True, normalize=False, precompute='auto',
+                 max_iter=1000, tol=1e-4, cv=None, copy_X=True,
+                 verbose=0, n_jobs=-1, positive=False, random_state=None,
+                 selection='cyclic'):
+
+        self.n_regressors_to_include = n_regressors_to_include
+        self.group_size = group_size
+        self.subset_model = ElNet(l1_ratio='ridge', eps=eps,
+                 n_alphas=n_alphas, alphas=alphas,
+                 fit_intercept=fit_intercept, normalize=normalize, precompute=precompute,
+                 max_iter=max_iter, tol=tol, cv=cv, copy_X=copy_X,
+                 verbose=verbose, n_jobs=n_jobs, positive=positive, random_state=random_state,
+                 selection=selection)
+        self.model = ElNet(l1_ratio=l1_ratio, eps=eps,
+                 n_alphas=n_alphas, alphas=alphas,
+                 fit_intercept=fit_intercept, normalize=normalize, precompute=precompute,
+                 max_iter=max_iter, tol=tol, cv=cv, copy_X=copy_X,
+                 verbose=verbose, n_jobs=n_jobs, positive=positive, random_state=random_state,
+                 selection=selection)
+        self.n_regressors = None
+        self.included_regressors = None
+        self.kernel = None
+
+    def fit(self, X=None, y=None):
+        self.n_regressors = X.shape[1]
+        coeff = np.zeros((self.n_regressors))
+        for start in np.arange(0, self.n_regressors, self.group_size):
+            subset = X[:,start:start+self.group_size,:]
+            self.subset_model.fit(subset, y)
+            k_fh = self.subset_model.dump()['k_fh']
+            coeff[start:start+subset.shape[1]] = np.sum(np.square(k_fh), axis=1)
+        order = np.argsort(-coeff)
+        self.included_regressors = np.sort(order[:self.n_regressors_to_include])
+        subset_tfh = X[:,self.included_regressors,:]
+
+        self.model.fit(subset_tfh, y)
+        k_fh_subset = self.model.coef_.reshape(self.model.kernel['n_f'], self.model.kernel['n_h'])
+
+        n_h = X.shape[2]
+        k_fh = np.zeros((self.n_regressors, n_h))
+        k_fh[self.included_regressors,:] = k_fh_subset
+
+        self.kernel = {'type': 'ElNetRidgeSubset',
+                       'n_f': self.n_regressors,
+                       'n_h': n_h,
+                       'c': self.model.intercept_,
+                       'k_fh': k_fh,
+                       'k_fh_subset': k_fh_subset,
+                       'included_regressors': self.included_regressors,
+                       'alpha': self.model.alpha_,
+                       'l1_ratio': self.model.l1_ratio_
+                      }
+
+    def predict(self, X=None):
+        return self.model.predict(X[:,self.included_regressors,:])
+
+    def score(self, X=None, y=None, sample_weight=None):
+        subset_tfh = X[:,self.included_regressors,:]
+        return self.model.score(subset_tfh, y)
+
+    def show(self):
+        '''
+        Show the kernel
+        '''
+        show_strf(self.kernel['k_fh'])
+
+    def dump(self):
+        '''
+        Return most important parameters in a pickleable format
+        '''
+        return self.kernel
+
 class LinearKernel():
     '''
     Shell class for reloading dumped kernels.
@@ -581,7 +745,6 @@ class RankNKernel(RegressorMixin):
             for i, (train_idx, test_idx) in enumerate(kfolds.split(X)):
                 sepkernel.fit(X[train_idx, :], resid[train_idx])
                 scores[i] = sepkernel.score(X[test_idx, :], resid[test_idx])
-            print(rank+1, scores)
             score = np.mean(scores)
             if score > 0:
                 resid = resid - sepkernel.predict(X)
