@@ -412,7 +412,7 @@ class ElNetLassoSubset():
     '''
 
     def __init__(self, l1_ratio='lasso',
-                 group_size=50, eps=1e-3,
+                 group_size=50, max_regressors=None, eps=1e-3,
                  n_alphas=100, alphas=None,
                  fit_intercept=True, normalize=False, precompute='auto',
                  max_iter=1000, tol=1e-4, cv=None, copy_X=True,
@@ -420,6 +420,7 @@ class ElNetLassoSubset():
                  selection='cyclic'):
 
         self.group_size = group_size
+        self.max_regressors = max_regressors
 
         self.subset_model = ElNet(l1_ratio='lasso', eps=eps,
                  n_alphas=n_alphas, alphas=alphas,
@@ -439,13 +440,24 @@ class ElNetLassoSubset():
 
     def fit(self, X=None, y=None):
         self.n_regressors = X.shape[1]
-        included_regressors = []
+        coeff = np.zeros((self.n_regressors))
         for start in np.arange(0, self.n_regressors, self.group_size):
-            self.subset_model.fit(X[:,start:start+self.group_size,:], y)
+            subset = X[:,start:start+self.group_size,:]
+            self.subset_model.fit(subset, y)
             k_fh = self.subset_model.dump()['k_fh']
-            included_regressors.append(start+np.where(np.sum(np.abs(k_fh), axis=1)>0)[0])
-        self.included_regressors = np.concatenate(included_regressors)
-        print(len(self.included_regressors))
+            coeff[start:start+subset.shape[1]] = np.sum(np.square(k_fh), axis=1)
+        
+        # get regressors with non-zero coefficients
+        self.included_regressors = np.argwhere(coeff>0)[:,0]
+        
+        if self.max_regressors is not None:
+            # include only the top n regressors
+            if len(self.included_regressors) > self.max_regressors:
+                included_coeff = coeff[self.included_regressors]
+                order = np.argsort(-included_coeff)
+                
+                self.included_regressors = np.sort(self.included_regressors[order[:self.max_regressors]])
+
         subset_tfh = X[:,self.included_regressors,:]
 
         self.model.fit(subset_tfh, y)
@@ -465,13 +477,13 @@ class ElNetLassoSubset():
                        'alpha': self.model.alpha_,
                        'l1_ratio': self.model.l1_ratio_
                       }
-
+        
     def predict(self, X=None):
         return self.model.predict(X[:,self.included_regressors,:])
-
+    
     def score(self, X=None, y=None, sample_weight=None):
         subset_tfh = X[:,self.included_regressors,:]
-        return self.model.score(subset_tfh, y)
+        return self.model.score(subset_tfh, y) 
 
     def show(self):
         '''
