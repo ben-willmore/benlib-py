@@ -4,11 +4,14 @@ Plotting functions
 
 # pylint: disable=C0103, R0912, R0914
 
+from string import ascii_lowercase, ascii_uppercase
+from textwrap import wrap
 from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
 from IPython.display import display, clear_output, HTML
 import ipywidgets as widgets
+
 
 def bindata(x, y, n_bins=100):
     '''
@@ -28,7 +31,8 @@ def bindata(x, y, n_bins=100):
     return binned[:, 0], binned[:, 1]
 
 def scatter_cc(x, y, xlim=[0, 1], ylim=[0, 1], marker='.', color='darkblue',
-               plot_central_tendency=True, central_tendency=np.median):
+               plot_central_tendency=True, central_tendency=np.median,
+               central_tendency_color='darkorange'):
 
     def _format_ticks(lim, extra_values=None):
         vals = []
@@ -63,10 +67,10 @@ def scatter_cc(x, y, xlim=[0, 1], ylim=[0, 1], marker='.', color='darkblue',
     plt.ylim(ylim)
     if plot_central_tendency:
         ct_x = central_tendency(x)
-        plt.plot([ct_x, ct_x], ylim, color='darkorange')
+        plt.plot([ct_x, ct_x], ylim, color=central_tendency_color)
         ct_y = central_tendency(y)
-        plt.plot(xlim, [ct_y, ct_y], color='darkorange')
-        plt.scatter(ct_x, ct_y, color='darkorange')
+        plt.plot(xlim, [ct_y, ct_y], color=central_tendency_color)
+        plt.scatter(ct_x, ct_y, color=central_tendency_color)
 
         vals, labels = _format_ticks(xlim, ct_x)
         plt.xticks(vals, labels)
@@ -108,3 +112,73 @@ class FigViewer():
 
     def on_button_clicked(self, _):
         self.show()
+
+def add_panel_labels(axes, lowercase=False,
+                 fontsize=16, fontweight='bold',
+                 x_offset=-0.1, y_offset=1):
+    if lowercase:
+        letters = ascii_lowercase
+    else:
+        letters = ascii_uppercase
+
+    for idx, axis in enumerate(axes.reshape(-1)):
+        axis.text(x_offset, y_offset, letters[idx],
+                  transform=axis.transAxes,
+                  fontsize=fontsize, fontweight=fontweight,
+                  va='bottom', ha='right')
+
+def add_caption(txt, wrap_width=100, fontsize=12):
+    txt = '\n'.join(wrap(txt, width=wrap_width))
+    plt.figtext(0.12, 0.01, txt,  fontsize=fontsize, va='top', ha='left')
+
+def scatter_cc_2(x, y1, y2, xlim=[0, 1], ylim=[0, 1], link_points=False):
+
+    def _format_ticks(lim, extra_values=None):
+        vals = []
+        if lim[0] < 0:
+            vals = [lim[0], 0]
+        else:
+            vals = [lim[0]]
+        if lim[1] > 1:
+            vals.extend([lim[1], 1])
+        else:
+            vals.append(lim[1])
+        if extra_values:
+            try:
+                vals.extend(extra_values)
+            except:
+                vals.append(extra_values)
+        vals = np.sort(vals)
+
+        labels = ['%0.2f' % v for v in vals]
+        labels = ['0' if l == '0.00' else l for l in labels]
+        labels = ['1' if l == '1.00' else l for l in labels]
+
+        return vals, labels
+
+    valid_idxes = np.where(np.isfinite(x) & np.isfinite(y1) & np.isfinite(y2))[0]
+    x = np.array(x)[valid_idxes]
+    y1 = np.array(y1)[valid_idxes]
+    y2 = np.array(y2)[valid_idxes]
+    if link_points:
+        for xp, y1p, y2p in zip(x,y1,y2):
+            plt.plot([xp, xp], [y1p, y2p], color='lightgrey', linewidth=0.75)
+    plt.scatter(x, y1, marker='+', color='red', zorder=2)
+    plt.scatter(x, y2, marker='.', color='blue', zorder=2)
+    plt.plot(xlim, ylim, 'k', linewidth=.75)
+    plt.axis('square')
+    plt.xlim(xlim)
+    plt.ylim(ylim)
+
+    vals, labels = _format_ticks(xlim)
+    plt.xticks(vals, labels)
+    vals, labels = _format_ticks(ylim)
+    plt.yticks(vals, labels)
+
+def choose_panel_layout(n):
+    factor_pairs = []
+    for i in range(1, int(np.sqrt(n)+1)):
+        if n % i == 0:
+            factor_pairs.append((n//i, i))
+    factor_pairs.sort(key=lambda p:p[0]-p[1])
+    return factor_pairs[0]

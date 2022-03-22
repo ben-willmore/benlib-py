@@ -61,6 +61,17 @@ def loadmat(filename):
     data = spio.loadmat(filename, struct_as_record=False, squeeze_me=True)
     return _check_keys(data)
 
+def sahani_quick(y_td):
+    # data must be time x repeats
+    n_t, n_d = y_td.shape
+
+    total_power = np.mean(np.var(y_td, axis=0, ddof=1))
+    signal_power = 1/(n_d-1) * (n_d * np.var(np.mean(y_td, axis=1), ddof=1) - total_power)
+    if signal_power < 0:
+        return np.nan, np.nan, total_power
+    noise_power = total_power - signal_power
+    return signal_power, noise_power, total_power
+
 def calc_CC_norm(y_td, y_hat):
     '''
     Calculate CC_norm, CC_abs_CC_max of a y_td matrix where t is time and d are repeats

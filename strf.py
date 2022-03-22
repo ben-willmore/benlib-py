@@ -446,16 +446,20 @@ class ElNetLassoSubset():
             self.subset_model.fit(subset, y)
             k_fh = self.subset_model.dump()['k_fh']
             coeff[start:start+subset.shape[1]] = np.sum(np.square(k_fh), axis=1)
-        
+
         # get regressors with non-zero coefficients
         self.included_regressors = np.argwhere(coeff>0)[:,0]
-        
+
+        # select just one regressor if all coeffs are zero
+        if len(self.included_regressors) == 0:
+            self.included_regressors = np.array([0])
+
         if self.max_regressors is not None:
             # include only the top n regressors
             if len(self.included_regressors) > self.max_regressors:
                 included_coeff = coeff[self.included_regressors]
                 order = np.argsort(-included_coeff)
-                
+
                 self.included_regressors = np.sort(self.included_regressors[order[:self.max_regressors]])
 
         subset_tfh = X[:,self.included_regressors,:]
@@ -477,13 +481,13 @@ class ElNetLassoSubset():
                        'alpha': self.model.alpha_,
                        'l1_ratio': self.model.l1_ratio_
                       }
-        
+
     def predict(self, X=None):
         return self.model.predict(X[:,self.included_regressors,:])
-    
+
     def score(self, X=None, y=None, sample_weight=None):
         subset_tfh = X[:,self.included_regressors,:]
-        return self.model.score(subset_tfh, y) 
+        return self.model.score(subset_tfh, y)
 
     def show(self):
         '''
@@ -826,7 +830,6 @@ class SplitPct():
         self.train_pct = train_pct
 
     def split(self, X=None, y=None, groups=None):
-        print(X.shape)
         n = X.shape[0]
         n_test = int(self.train_pct/100 * n)
         return [(np.arange(n_test), np.arange(n_test, n))]

@@ -144,7 +144,7 @@ class Sigmoid(RegressorMixin):
         Plot sigmoid relationship
         '''
         x, y = self.fit_data
-        bin_x, bin_y = bindata(x, y, n_bins=100)
+        bin_x, bin_y = bindata(x, y, n_bins=50)
         plt.scatter(bin_x, bin_y)
         x = np.linspace(x.min(), x.max(), 40)
         if show_starting_guess:
