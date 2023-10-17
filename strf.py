@@ -10,16 +10,24 @@ from sklearn.base import RegressorMixin
 from sklearn.linear_model import ElasticNet, ElasticNetCV
 from sklearn.model_selection import KFold
 from scipy.linalg import lstsq
+
 from benlib.utils import calc_CC_norm
 
-def show_strf(k_fh, xlim=None, ylim=None, xticks=None, yticks=None, sort_order=None):
+def show_strf(k_fh, xlim=None, ylim=None, clim=None, xticks=None, yticks=None, sort_order=None,
+              ax=None):
     '''
     Show STRF using blue->red colormap, scaled so that zero is in the centre (white)
     '''
+    if ax is None:
+        ax = plt.gca()
+
     if sort_order is not None:
         k_fh = np.array(k_fh)[sort_order, :]
 
-    mx = max([np.max(k_fh), np.abs(np.min(k_fh))])
+    if clim is not None:
+        mx = clim
+    else:
+        mx = max([np.max(k_fh), np.abs(np.min(k_fh))])
 
     if xlim is None:
         xlim = [0, k_fh.shape[1]-1]
@@ -29,9 +37,7 @@ def show_strf(k_fh, xlim=None, ylim=None, xticks=None, yticks=None, sort_order=N
         ylim = [0, k_fh.shape[0]-1]
     yvals = np.linspace(np.min(ylim), np.max(ylim), k_fh.shape[0])
 
-    plt.pcolormesh(xvals, yvals, k_fh, cmap='seismic', vmin=-mx, vmax=mx)
-
-    ax = plt.gca()
+    ax.pcolormesh(xvals, yvals, k_fh, cmap='seismic', vmin=-mx, vmax=mx)
 
     if xticks is not None:
         ax.set_xticks(xticks)
@@ -256,7 +262,7 @@ class ElNet(ElasticNetCV):
     '''
     def __init__(self, l1_ratio=None, eps=1e-3,
                  n_alphas=100, alphas=None,
-                 fit_intercept=True, normalize=False, precompute='auto',
+                 fit_intercept=True, precompute='auto',
                  max_iter=1000, tol=1e-4, cv=None, copy_X=True,
                  verbose=0, n_jobs=-1, positive=False, random_state=None,
                  selection='cyclic'):
@@ -276,7 +282,7 @@ class ElNet(ElasticNetCV):
             print('Using a range of l1_ratios: %s' % str(l1_ratio))
 
         super().__init__(l1_ratio=l1_ratio, eps=eps, n_alphas=n_alphas, alphas=alphas,
-                         fit_intercept=fit_intercept, normalize=normalize, precompute=precompute,
+                         fit_intercept=fit_intercept, precompute=precompute,
                          max_iter=max_iter, tol=tol, cv=cv, copy_X=copy_X,
                          verbose=verbose, n_jobs=n_jobs, positive=positive,
                          random_state=random_state, selection=selection)
@@ -296,6 +302,7 @@ class ElNet(ElasticNetCV):
                        'alpha': self.alpha_,
                        'l1_ratio': self.l1_ratio_
                       }
+        print('Number of iterations used: %d' % self.n_iter_)
 
     def predict(self, X=None):
         '''
@@ -334,7 +341,7 @@ class ElNetNoCV(ElasticNet):
     '''
     def __init__(self,
                  alpha=1.0, l1_ratio=1.0,
-                 fit_intercept=True, normalize=False, precompute=False,
+                 fit_intercept=True, precompute=False,
                  max_iter=1000, tol=1e-4, warm_start=False,
                  positive=False, random_state=None,
                  selection='cyclic'):
@@ -350,7 +357,7 @@ class ElNetNoCV(ElasticNet):
         self.kernel = None
 
         super().__init__(alpha=alpha, l1_ratio=l1_ratio,
-                         fit_intercept=fit_intercept, normalize=normalize, precompute=precompute,
+                         fit_intercept=fit_intercept, precompute=precompute,
                          max_iter=max_iter, tol=tol, warm_start=warm_start,
                          positive=positive,
                          random_state=random_state, selection=selection)
@@ -414,7 +421,7 @@ class ElNetLassoSubset():
     def __init__(self, l1_ratio='lasso',
                  group_size=50, max_regressors=None, eps=1e-3,
                  n_alphas=100, alphas=None,
-                 fit_intercept=True, normalize=False, precompute='auto',
+                 fit_intercept=True, precompute='auto',
                  max_iter=1000, tol=1e-4, cv=None, copy_X=True,
                  verbose=0, n_jobs=-1, positive=False, random_state=None,
                  selection='cyclic'):
@@ -424,13 +431,13 @@ class ElNetLassoSubset():
 
         self.subset_model = ElNet(l1_ratio='lasso', eps=eps,
                  n_alphas=n_alphas, alphas=alphas,
-                 fit_intercept=fit_intercept, normalize=normalize, precompute=precompute,
+                 fit_intercept=fit_intercept, precompute=precompute,
                  max_iter=max_iter, tol=tol, cv=cv, copy_X=copy_X,
                  verbose=verbose, n_jobs=n_jobs, positive=positive, random_state=random_state,
                  selection=selection)
         self.model = ElNet(l1_ratio=l1_ratio, eps=eps,
                  n_alphas=n_alphas, alphas=alphas,
-                 fit_intercept=fit_intercept, normalize=normalize, precompute=precompute,
+                 fit_intercept=fit_intercept, precompute=precompute,
                  max_iter=max_iter, tol=tol, cv=cv, copy_X=copy_X,
                  verbose=verbose, n_jobs=n_jobs, positive=positive, random_state=random_state,
                  selection=selection)
@@ -511,7 +518,7 @@ class ElNetRidgeSubset():
     def __init__(self, l1_ratio='lasso',
                  n_regressors_to_include=100, group_size=50, eps=1e-3,
                  n_alphas=100, alphas=None,
-                 fit_intercept=True, normalize=False, precompute='auto',
+                 fit_intercept=True, precompute='auto',
                  max_iter=1000, tol=1e-4, cv=None, copy_X=True,
                  verbose=0, n_jobs=-1, positive=False, random_state=None,
                  selection='cyclic'):
@@ -520,13 +527,13 @@ class ElNetRidgeSubset():
         self.group_size = group_size
         self.subset_model = ElNet(l1_ratio='ridge', eps=eps,
                  n_alphas=n_alphas, alphas=alphas,
-                 fit_intercept=fit_intercept, normalize=normalize, precompute=precompute,
+                 fit_intercept=fit_intercept, precompute=precompute,
                  max_iter=max_iter, tol=tol, cv=cv, copy_X=copy_X,
                  verbose=verbose, n_jobs=n_jobs, positive=positive, random_state=random_state,
                  selection=selection)
         self.model = ElNet(l1_ratio=l1_ratio, eps=eps,
                  n_alphas=n_alphas, alphas=alphas,
-                 fit_intercept=fit_intercept, normalize=normalize, precompute=precompute,
+                 fit_intercept=fit_intercept, precompute=precompute,
                  max_iter=max_iter, tol=tol, cv=cv, copy_X=copy_X,
                  verbose=verbose, n_jobs=n_jobs, positive=positive, random_state=random_state,
                  selection=selection)
@@ -582,6 +589,225 @@ class ElNetRidgeSubset():
         Return most important parameters in a pickleable format
         '''
         return self.kernel
+
+try:
+    import glmnet_python
+    from glmnet import glmnet
+    from glmnetPredict import glmnetPredict
+    import gc
+
+    class GlmNet():
+        '''
+        Elnet kernel using glmnet. Works with a tensorized X_tfh
+        '''
+        def __init__(self, alpha=None, family='gaussian', options=None, dump=None):
+
+            if dump is not None:
+                self.kernel = dump
+                return
+
+            self.kernel = None
+
+            self.family = family
+            print('Using %s family' % (self.family))
+
+            if isinstance(alpha, str):
+                if alpha == 'lasso':
+                    alpha = 1.0
+                elif alpha == 'ridge':
+                    alpha = 0.01
+            elif not alpha:
+                alpha = np.logspace(np.log10(0.1), 0, num=5)
+
+            if not isinstance(alpha, (list, np.ndarray)):
+                alpha = [alpha]
+
+            self.alpha = alpha
+            print('Using alpha values: %s (where 0.01=ridge/L2, 1.0=lasso/L1)' % (self.alpha))
+
+            if not options:
+                self.options = {}
+            else:
+                self.options = options
+
+        def fit(self, X=None, y=None, val_idx=None, lambdau=None,
+                refit_on_all_data=True, approximate_lambda=False):
+            '''
+            Fit elnet model
+            '''
+            if len(X.shape) == 3:
+                n_t, n_f, n_h = X.shape
+            elif len(X.shape) == 2:
+                n_t, n_f = X.shape
+                n_h = 1
+
+            all_idx = list(range(n_t))
+            if not val_idx:
+                val_idx = range(int(np.floor(0.9*n_t)), n_t)
+                assert(val_idx[-1]==all_idx[-1])
+
+            train_idx = [idx for idx in all_idx if idx not in val_idx]
+
+            res = []
+            best_mse = np.inf
+
+            print('Fitting on training data')
+
+            for alpha_idx, alpha in enumerate(self.alpha):
+                if len(X.shape) == 3:
+                    X_train = X[train_idx,:,:].reshape(len(train_idx), -1)
+                elif len(X.shape) == 2:
+                    X_train = X[train_idx, :]
+                if lambdau is None:
+                    gc.collect()
+                    this_res = glmnet(x=X_train,
+                                      y=y[train_idx],
+                                      family=self.family,
+                                      alpha=alpha,
+                                      **self.options)
+                else:
+                    gc.collect()
+                    lambdau = np.array(lambdau)
+                    this_res = glmnet(x=X_train,
+                                      y=y[train_idx],
+                                      family=self.family,
+                                      lambdau=lambdau,
+                                      alpha=alpha,
+                                      **self.options)
+
+                this_res['alpha'] = alpha
+
+                mse = []
+
+                if len(X.shape) == 3:
+                    X_val = X[val_idx,:,:].reshape(len(val_idx), -1)
+                elif len(X.shape) == 2:
+                    X_val = X[val_idx,:]
+
+                y_hat = glmnetPredict(this_res, X_val, ptype='response',
+                                      s=this_res['lambdau'])
+                for lambda_idx in range(len(this_res['lambdau'])):
+                    mse.append(np.mean((y_hat[:,lambda_idx]-y[val_idx])**2))
+
+                this_res['mse'] = mse
+
+                res.append(this_res)
+
+                if np.min(mse) < best_mse:
+                    best_mse = np.min(mse)
+                    best_alpha_idx = alpha_idx
+                    best_lambda_idx = max(np.where(mse==best_mse)[0][0], 1)
+                    # print(best_lambda_idx)
+                    best_lambda = this_res['lambdau'][best_lambda_idx]
+    #                 print(best_mse, self.alpha[best_alpha_idx], this_res['lambdau'][best_lambda_idx])
+
+            if refit_on_all_data:
+                print('Refitting with best lambda/alpha on combined training/validation data')
+
+                if approximate_lambda:
+                    # choose the lambda closest to the previous best value
+                    # (because glmnet sometimes gets stuck if you specify a lambdau)
+                    gc.collect()
+                    refit_res = glmnet(x=X.reshape(X.shape[0], -1),
+                                       y=y,
+                                       family=self.family,
+                                       alpha=self.alpha[best_alpha_idx],
+                                      **self.options)
+                                       # lambdau=np.array([best_lambda])) # sometimes gets stuck
+                    # choose lambda closest to the original best value
+                    best_lambda_idx = np.argmin(np.abs(refit_res['lambdau'] - best_lambda))
+                    best_lambda_refit = refit_res['lambdau'][best_lambda_idx]
+                    print('alpha = %f, original best lambda = %f, final lambda = %f' % \
+                       (self.alpha[best_alpha_idx], best_lambda, best_lambda_refit))
+
+                else:
+                    # refit with the actual best lambda (may get stuck)
+                    gc.collect()
+                    refit_res = glmnet(x=X.reshape(X.shape[0], -1),
+                                       y=y,
+                                       family=self.family,
+                                       alpha=self.alpha[best_alpha_idx],
+                                       lambdau=np.array([best_lambda]),
+                                       **self.options) # sometimes gets stuck
+                    best_lambda_idx = 0
+                    best_lambda_refit = best_lambda
+
+                self.kernel = {'type': 'GlmNet',
+                               'n_f': n_f,
+                               'n_h': n_h,
+                               'c': refit_res['a0'][best_lambda_idx],
+                               'k_fh': refit_res['beta'][:,best_lambda_idx].reshape((n_f, n_h)),
+                               'k_f': refit_res['beta'][:,best_lambda_idx],
+                               'alpha': self.alpha[best_alpha_idx],
+                               'refit_lambda_idx': best_lambda_idx,
+                               'lambda': best_lambda_refit,
+                               'all_res': res,
+                               'refit_res': refit_res,
+                              }
+            else:
+                print('Not refitting on combined training/validation data')
+                self.kernel = {'type': 'ElNet',
+                               'n_f': n_f,
+                               'n_h': n_h,
+                               'c': res[best_alpha_idx]['a0'][best_lambda_idx],
+                               'k_fh': res[best_alpha_idx]['beta'][:,best_lambda_idx].reshape((n_f, n_h)),
+                               'k_f': res[best_alpha_idx]['beta'][:,best_lambda_idx],
+                               'best_alpha_idx': best_alpha_idx,
+                               'best_lambda_idx': best_lambda_idx,
+                               'alpha': self.alpha[best_alpha_idx],
+                               'lambda': best_lambda,
+                               'all_res': res
+                              }
+
+        def predict(self, X=None, alternative_lambda=None):
+            '''
+            Predictions of glmnet model
+            '''
+            if not self.kernel:
+                raise ValueError('Model has not been trained yet')
+
+            if 'refit_res' in self.kernel:
+                res = self.kernel['refit_res']
+                lamb = res['lambdau'][self.kernel['refit_lambda_idx']]
+            else:
+                res = self.kernel['all_res'][self.kernel['best_alpha_idx']]
+                lamb = res['lambdau'][self.kernel['best_lambda_idx']]
+
+            if alternative_lambda is not None:
+                lamb = alternative_lambda
+
+            y_hat = glmnetPredict(res,
+                                  X.reshape(X.shape[0], -1),
+                                  ptype='response',
+                                  s=np.array([lamb]))[:,0]
+            return y_hat.squeeze()
+
+        def score(self, X=None, y=None, sample_weight=None, alternative_lambda=None):
+            '''
+            Score of glmnet model
+            '''
+            y_hat = self.predict(X, alternative_lambda=alternative_lambda)
+            print(y_hat.shape, y.shape)
+
+            if len(y.shape) == 1:
+                return np.corrcoef(y, y_hat)[0, 1]
+
+            return calc_CC_norm(y, y_hat)
+
+        def show(self):
+            '''
+            Show the kernel
+            '''
+            show_strf(self.kernel['k_fh'])
+
+        def dump(self):
+            '''
+            Return most important parameters in a pickleable format
+            '''
+            return self.kernel
+
+except:
+    pass 
 
 class LinearKernel():
     '''
@@ -833,3 +1059,6 @@ class SplitPct():
         n = X.shape[0]
         n_test = int(self.train_pct/100 * n)
         return [(np.arange(n_test), np.arange(n_test, n))]
+
+    def get_n_splits(self, *args, **kwargs):
+        return 1

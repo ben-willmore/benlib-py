@@ -11,6 +11,14 @@ from torch.autograd import Variable
 from benlib.utils import calc_CC_norm
 from benlib.strf import show_strf
 
+try:
+    if torch.cuda.is_available():
+        print('CUDA available')
+    elif torch.backends.mps.is_available():
+        print('MPS available')
+except:
+    pass
+
 class TorchLinearRegression(torch.nn.Module):
     def __init__(self, learning_rate=1e-2, epochs=2500, lamb=1e-2):
         super(TorchLinearRegression, self).__init__()
@@ -35,6 +43,11 @@ class TorchLinearRegression(torch.nn.Module):
             x_train = x_train.cuda()
             y_train = y_train.cuda()
             self.linear = self.linear.cuda()
+        elif torch.backends.mps.is_available():
+            mps_device = torch.device('mps')
+            x_train = x_train.to(mps_device)
+            y_train = y_train.to(mps_device)
+            self.linear = self.linear.to(mps_device)
 
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
@@ -78,6 +91,9 @@ class TorchLinearRegression(torch.nn.Module):
 
         if torch.cuda.is_available():
             x = x.cuda()
+        elif torch.backends.mps.is_available():
+            mps_device = torch.device('mps')
+            x = x.to(mps_device)
         out = self.forward(x)
         return out.detach().cpu().numpy().ravel()
 
@@ -111,6 +127,9 @@ class TorchLinearRegression(torch.nn.Module):
         self.linear.weight = torch.nn.Parameter(torch.from_numpy(info['w']))
         if torch.cuda.is_available():
             self.linear = self.linear.cuda()
+        elif torch.backends.mps.is_available():
+            mps_device = torch.device('mps')
+            self.linear = self.linear.to(mps_device)
 
 class TorchNRF(torch.nn.Module):
     def __init__(self, n_hidden=3,
@@ -154,6 +173,15 @@ class TorchNRF(torch.nn.Module):
             self.linear1 = self.linear1.cuda()
             self.linear2 = self.linear2.cuda()
             self.linear3 = self.linear3.cuda()
+        elif torch.backends.mps.is_available():
+            mps_device = torch.device('mps')
+            x_train = x_train.to(mps_device)
+            y_train = y_train.to(mps_device)
+            x_tune = x_tune.to(mps_device)
+            y_tune = y_tune.to(mps_device)
+            self.linear1 = self.linear1.to(mps_device)
+            self.linear2 = self.linear2.to(mps_device)
+            self.linear3 = self.linear3.to(mps_device)
 
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
@@ -218,6 +246,7 @@ class TorchNRF(torch.nn.Module):
                 'n_f': n_f,
                 'n_h': n_h,
                 'n_hidden': self.n_hidden,
+                'lamb': self.lamb,
                 'k_fh': w1.reshape(self.n_hidden, n_f, n_h).transpose((1, 0, 2)). \
                    reshape(n_f, n_h*self.n_hidden),
                 'b1': self.linear1.bias.detach().cpu().numpy(),
@@ -241,6 +270,9 @@ class TorchNRF(torch.nn.Module):
             x = torch.from_numpy(X.reshape(n_t, n_f*n_h)).type(torch.FloatTensor)
             if torch.cuda.is_available():
                 x = x.cuda()
+            elif torch.backends.mps.is_available():
+                mps_device = torch.device('mps')
+                x = x.to(mps_device)
             out = self.forward(x)
         return out.detach().cpu().numpy().ravel()
 
@@ -262,6 +294,9 @@ class TorchNRF(torch.nn.Module):
         with torch.no_grad():
             if torch.cuda.is_available():
                 x = x.cuda()
+            elif torch.backends.mps.is_available():
+                mps_device = torch.device('mps')
+                x = x.to(mps_device)
             out = self.forward(x)
         return out.detach().cpu().numpy().ravel()
 
@@ -323,3 +358,57 @@ class TorchNRF(torch.nn.Module):
             self.linear1 = self.linear1.cuda()
             self.linear2 = self.linear2.cuda()
             self.linear3 = self.linear3.cuda()
+        elif torch.backends.mps.is_available():
+            mps_device = torch.device('mps')
+            self.linear1 = self.linear1.to(mps_device)
+            self.linear2 = self.linear2.to(mps_device)
+            self.linear3 = self.linear3.to(mps_device)
+
+class TorchNRFCV():
+    '''
+    Cross-validated hyperparameter search for TorchNRF
+    '''
+
+    def __init__(self):
+        self.best_score = None
+        self.best_model = None
+        self.best_lambda = None
+        self.best_n_hidden = None
+
+    def fit(self, X=None, y=None, lambdas=None, n_hidden_range=None):
+        if lambdas is None:
+            lambdas = 10.0**np.arange(-6, 0, 1)
+        if n_hidden_range is None:
+            n_hidden_range = [1,16,32]
+
+        n_t = len(y)
+        n_cv = n_t//10
+        train_idx = np.arange(0, n_t-n_cv)
+        test_idx = np.arange(n_t-n_cv, n_t)
+
+        self.best_score = -100000
+        self.best_model = None
+        for lamb in lambdas:
+            for n_hidden in n_hidden_range:
+                model = TorchNRF(n_hidden=n_hidden, lamb=lamb)
+                model.fit(X[train_idx,:,:], y[train_idx])
+                score = model.score(X[test_idx,:,:], y[test_idx])
+                print(lamb, n_hidden, score)
+                if score > self.best_score:
+                    self.best_model = model
+                    self.best_score = score
+                    self.best_lambda = lamb
+                    self.best_n_hidden = n_hidden
+
+    def predict(self, X=None):
+        return self.best_model.predict(X=X)
+
+    def score(self, X=None, y=None, sample_weight=None):
+        return self.best_model.score(X=X, y=y, sample_weight=sample_weight)
+
+    def dump(self):
+        dump = self.best_model.dump()
+        dump['best_score'] = self.best_score
+        dump['best_lambda'] = self.best_lambda
+        dump['best_n_hidden'] = self.best_n_hidden
+        return dump

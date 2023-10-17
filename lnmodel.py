@@ -151,6 +151,12 @@ class Sigmoid(RegressorMixin):
             plt.plot(x, sigmoid(self.guess, x), 'r')
         plt.plot(x, self.predict(x), 'g')
 
+    def dump(self):
+        return self.fit_params
+
+    def reload(self, params):
+        self.fit_params = params
+
 def sigmoid(params, x_t):
     '''
     Robust sigmoid
